@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import Speech
 
@@ -95,7 +96,7 @@ final class SpeechRecognizer: ObservableObject {
         }
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, self.task != nil else { return }
                 if let result {
                     self.transcript = result.bestTranscription.formattedString

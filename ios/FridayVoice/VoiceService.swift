@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 
 /// Speaks an answer: ElevenLabs mp3 first, AVSpeechSynthesizer if that fails.
+@MainActor
 final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
     struct Result {
         /// Non-nil when we fell back to the built-in device voice.
@@ -10,7 +11,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
 
     private var player: AVAudioPlayer?
     private let synthesizer = AVSpeechSynthesizer()
-    private var finish: (() -> Void)?
+    private var finish: (@Sendable () -> Void)?
 
     override init() {
         super.init()
@@ -18,7 +19,6 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
     }
 
     /// Speaks `text` and returns after playback finishes (or immediately on failure to start).
-    @MainActor
     func speak(_ text: String) async -> Result {
         stop()
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -95,7 +95,6 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         guard player.play() else { throw VoiceError.playFailed }
     }
 
-    @MainActor
     private func speakOnDevice(_ text: String) async {
         try? AppAudioSession.startPlayback()
 
@@ -109,7 +108,10 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
 
     private func waitUntilFinished() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            finish = { continuation.resume() }
+            // Body runs synchronously on the caller (main actor) before we suspend.
+            MainActor.assumeIsolated {
+                self.finish = { continuation.resume() }
+            }
         }
     }
 
@@ -120,23 +122,23 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         callback?()
     }
 
-    // MARK: - Delegates (called off the main actor; hop back)
+    // MARK: - Delegates (audio/speech callbacks are not on the main actor)
 
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        DispatchQueue.main.async { self.complete() }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in self?.complete() }
     }
 
-    func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         print("[ElevenLabs] AVAudioPlayer decode error: \(error?.localizedDescription ?? "unknown")")
-        DispatchQueue.main.async { self.complete() }
+        Task { @MainActor [weak self] in self?.complete() }
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.complete() }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in self?.complete() }
     }
 
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        DispatchQueue.main.async { self.complete() }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in self?.complete() }
     }
 }
 

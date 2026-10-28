@@ -30,9 +30,15 @@ enum AppAudioSession {
 
 /// Turns ObjC exceptions from Core Audio into Swift errors.
 enum AudioException {
+    /// `FVTry` takes an ObjC block (escaping in Swift). It runs `work`
+    /// immediately and does not store it, so `withoutActuallyEscaping`
+    /// keeps the caller's closure non-escaping (local `var` captures stay valid).
     static func run(_ work: () -> Void) throws {
         var nsError: NSError?
-        let ok = FVTry(work, &nsError)
+        var ok = false
+        withoutActuallyEscaping(work) { escapingWork in
+            ok = FVTry(escapingWork, &nsError)
+        }
         if !ok {
             throw SpeechError.audioSetup(nsError?.localizedDescription ?? "Audio setup failed.")
         }
@@ -40,6 +46,8 @@ enum AudioException {
 
     /// For `removeTap` when we are not sure a tap exists.
     static func runIgnoring(_ work: () -> Void) {
-        _ = FVTry(work, nil)
+        withoutActuallyEscaping(work) { escapingWork in
+            _ = FVTry(escapingWork, nil)
+        }
     }
 }
