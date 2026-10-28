@@ -1,0 +1,12 @@
+// Build settings shared by Debug and Release.
+// Secrets.xcconfig is gitignored — copy it from Secrets.example.xcconfig.
+// The "?" means this include is optional so the project still opens
+// before anyone has created Secrets.xcconfig.
+
+XAI_API_KEY =
+ELEVENLABS_API_KEY =
+XAI_MODEL = grok-4.7
+ELEVENLABS_VOICE_ID = 6WwXjDDEMyNmFG95zycZ
+ELEVENLABS_MODEL_ID = eleven_flash_v2_5
+
+#include? "Secrets.xcconfig"
