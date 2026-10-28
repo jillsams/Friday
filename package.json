@@ -1,0 +1,17 @@
+{
+  "name": "friday-voice-helper",
+  "version": "1.0.0",
+  "description": "Friday Voice Helper — ask a question out loud, get a spoken answer.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true,
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}

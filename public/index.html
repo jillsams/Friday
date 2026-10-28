@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Friday Voice Helper</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Voice helper</p>
+        <h1>Friday</h1>
+        <p class="tagline">Ask out loud. Get a spoken answer.</p>
+        <p id="mode-badge" class="mode-badge" hidden>Demo mode — no API keys</p>
+      </header>
+
+      <!-- Live status: Ready / Listening / Thinking / Speaking -->
+      <div id="status" class="status" data-state="ready">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="status-text">Ready</span>
+      </div>
+
+      <button
+        id="mic-button"
+        class="mic"
+        type="button"
+        aria-label="Start listening"
+      >
+        <span class="mic-ring" aria-hidden="true"></span>
+        <span class="mic-ring delay" aria-hidden="true"></span>
+        <span class="mic-core">
+          <!-- Simple mic icon (inline SVG so we don't need extra files) -->
+          <svg viewBox="0 0 24 24" width="42" height="42" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm7-3a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V20H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-2.08A7 7 0 0 0 19 11z"
+            />
+          </svg>
+        </span>
+      </button>
+      <p class="hint" id="mic-hint">Tap the mic and speak, or type below</p>
+
+      <div id="unsupported" class="banner" hidden>
+        This browser doesn't support speech-to-text (Web Speech API). Chrome
+        works best. Use the text box below — the rest of the demo still runs.
+      </div>
+
+      <!-- Chat-style transcript of the conversation -->
+      <section id="transcript" class="transcript" aria-live="polite">
+        <p class="empty" id="empty-state">
+          Nothing yet. Ask Friday a question to start.
+        </p>
+      </section>
+
+      <form id="ask-form" class="ask-form">
+        <label class="sr-only" for="question-input">Type a question</label>
+        <input
+          id="question-input"
+          type="text"
+          autocomplete="off"
+          placeholder="Type a question as a fallback…"
+        />
+        <button type="submit">Ask</button>
+      </form>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
