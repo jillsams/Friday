@@ -10,8 +10,11 @@ enum Secrets {
     static var elevenLabsVoiceID: String { plist("ELEVENLABS_VOICE_ID", fallback: "EXAVITQu4vr4xnSDxMaL") }
     static var elevenLabsModelID: String { plist("ELEVENLABS_MODEL_ID", fallback: "eleven_flash_v2_5") }
 
+    static var tavilyAPIKey: String { plist("TAVILY_API_KEY") }
+
     static var hasXAIKey: Bool { !xaiAPIKey.isEmpty }
     static var hasElevenLabsKey: Bool { !elevenLabsAPIKey.isEmpty }
+    static var hasTavilyKey: Bool { !tavilyAPIKey.isEmpty }
 
     /// Header badge. Nil means both keys are present — hide the badge.
     static var modeBadge: String? {

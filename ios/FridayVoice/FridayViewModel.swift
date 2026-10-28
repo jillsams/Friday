@@ -1,9 +1,11 @@
 import Combine
 import Foundation
+import SwiftUI
 
 enum AppStatus: String {
     case ready = "Ready"
     case listening = "Listening"
+    case searching = "Searching the web…"
     case thinking = "Thinking"
     case speaking = "Speaking"
     case error = "Error"
@@ -15,6 +17,7 @@ struct ChatMessage: Identifiable {
     let role: Role
     let text: String
     var isDemo = false
+    var sources: [TavilyService.Hit] = []
 }
 
 /// Ties the mic, Grok, and spoken answers together for the single screen.
@@ -24,10 +27,14 @@ final class FridayViewModel: ObservableObject {
     @Published var status: AppStatus = .ready
     @Published var draft = ""
     @Published var voiceNote: String?
+    @Published var searchNote: String?
     @Published var isBusy = false
+    /// Default on so the "what's on near me" demo is live until someone toggles it off.
+    @AppStorage("liveSearch") var liveSearch = true
 
     let speech = SpeechRecognizer()
     private let chat = ChatService()
+    private let tavily = TavilyService()
     private let voice = VoiceService()
     private var bag = Set<AnyCancellable>()
 
@@ -101,11 +108,25 @@ final class FridayViewModel: ObservableObject {
         guard !isBusy else { return }
         isBusy = true
         voiceNote = nil
+        searchNote = nil
         messages.append(ChatMessage(role: .you, text: question))
-        status = .thinking
 
-        let answer = await chat.ask(question)
-        messages.append(ChatMessage(role: .friday, text: answer.text, isDemo: answer.isDemo))
+        var webResults: [TavilyService.Hit]?
+        if liveSearch {
+            status = .searching
+            switch await tavily.search(question) {
+            case .success(let hits):
+                webResults = hits
+            case .unavailable(let note):
+                searchNote = note
+                webResults = nil
+            }
+        }
+
+        status = .thinking
+        let answer = await chat.ask(question, webResults: webResults)
+        let sources = Array((webResults ?? []).prefix(3))
+        messages.append(ChatMessage(role: .friday, text: answer.text, isDemo: answer.isDemo, sources: sources))
 
         status = .speaking
         let spoken = await voice.speak(answer.text)

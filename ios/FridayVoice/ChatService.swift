@@ -8,7 +8,9 @@ struct ChatService {
         let isDemo: Bool
     }
 
-    func ask(_ question: String) async -> Answer {
+    /// `webResults` nil = Grok alone (Live search off, or Tavily unavailable).
+    /// Non-nil = answer only from those hits; today's London date is in the system prompt.
+    func ask(_ question: String, webResults: [TavilyService.Hit]? = nil) async -> Answer {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return Answer(text: "Please ask a question.", isDemo: false)
@@ -31,12 +33,22 @@ struct ChatService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 60
 
+        let system: String
+        let user: String
+        if let hits = webResults {
+            system = SystemPrompt.buildLiveSearch()
+            user = Self.userMessage(question: trimmed, hits: hits)
+        } else {
+            system = SystemPrompt.build()
+            user = trimmed
+        }
+
         let body: [String: Any] = [
             "model": Secrets.xaiModel,
             "max_tokens": 300,
             "messages": [
-                ["role": "system", "content": SystemPrompt.build()],
-                ["role": "user", "content": trimmed],
+                ["role": "system", "content": system],
+                ["role": "user", "content": user],
             ],
         ]
 
@@ -60,6 +72,16 @@ struct ChatService {
             print("xAI request threw \(error.localizedDescription)")
             return Answer(text: "Could not reach the xAI API. Check your network and try again.", isDemo: false)
         }
+    }
+
+    private static func userMessage(question: String, hits: [TavilyService.Hit]) -> String {
+        if hits.isEmpty {
+            return "Question: \(question)\n\nWeb search results: none."
+        }
+        let block = hits.enumerated().map { index, hit in
+            "[\(index + 1)] \(hit.title)\n\(hit.url.absoluteString)\n\(hit.snippet)"
+        }.joined(separator: "\n\n")
+        return "Question: \(question)\n\nWeb search results:\n\(block)"
     }
 }
 
