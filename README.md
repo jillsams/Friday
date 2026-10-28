@@ -78,12 +78,32 @@ If this key is missing, `/api/ask` still returns a **demo answer** that starts w
 
 ### ElevenLabs — for a nicer spoken voice
 
-1. Create an account at [https://elevenlabs.io](https://elevenlabs.io).
+1. Create an account at [https://elevenlabs.io](https://elevenlabs.io) (the free plan is enough).
 2. Open **Settings → API keys** and create a key.
 3. Put it in `.env` as `ELEVENLABS_API_KEY=...`
-4. Optional: set `ELEVENLABS_VOICE_ID` to a voice from the [voice library](https://elevenlabs.io/app/voice-library). The default is George (`JBFqnCBsd6RMkjVDRZzb`).
+4. Restart `npm start`. The header badge should **disappear** once both keys are loaded (it reads `/api/status`, not a hardcoded label).
 
-If this key is missing **or** the request fails, the page falls back to the browser's `speechSynthesis` voice.
+The default model is **`eleven_flash_v2_5`** (the model ElevenLabs documents for free-plan API calls). The default voice is **Eldrin** (`6WwXjDDEMyNmFG95zycZ`), a premade voice for current accounts.
+
+#### How to pick a different voice id
+
+1. Sign in at [https://elevenlabs.io](https://elevenlabs.io).
+2. Open **My Voices** (Voices in the sidebar).
+3. Find a **premade** voice that is already in your account. Do **not** pick a Voice Library / community voice on the free plan — those are blocked on the API.
+4. Click the **three dots** next to the voice → **Copy voice ID**.
+5. Paste it in `.env`:
+
+   ```
+   ELEVENLABS_VOICE_ID=the_id_you_copied
+   ```
+
+6. Restart the server.
+
+You can also change the model with `ELEVENLABS_MODEL_ID` (for example `eleven_multilingual_v2`). Stick with `eleven_flash_v2_5` unless you have a reason to switch.
+
+**Do not use the old "George" id** `JBFqnCBsd6RMkjVDRZzb` unless your ElevenLabs account was created **before March 2026**. Those legacy Default voices are hidden from newer accounts and the API returns an error — Friday then falls back to the browser voice.
+
+If this key is missing **or** the request fails, the page falls back to the browser's `speechSynthesis` voice and shows a small note. The **server terminal** prints `[ElevenLabs] HTTP …` plus the error body (never the key).
 
 ---
 
@@ -101,6 +121,8 @@ Answer in 2–4 short sentences. Stay on that product.`;
 Restart the server (`Ctrl+C`, then `npm start`) so the new prompt is loaded.
 
 The prompt is **not** in the HTML. Keeping it in `config.js` means you can retune Friday without touching the UI.
+
+Every Grok request also gets **today's date and time in Europe/London** appended automatically (see `buildSystemPrompt()` in `config.js`). You do not type the date yourself. That is why "what day is it today?" works.
 
 ---
 
@@ -125,6 +147,9 @@ That's the whole product: one page, one server, two optional APIs, and fallbacks
 | Mic does nothing / banner about speech-to-text | Use Chrome, or type in the box. Firefox and Safari often don't support `SpeechRecognition`. |
 | Mic error / "Mic blocked" | Click the padlock in the address bar and allow the microphone. |
 | Always `[DEMO MODE]` answers | Add `XAI_API_KEY` to `.env` and restart. |
-| Robot-y built-in voice | Add `ELEVENLABS_API_KEY` and restart. Check the server log if ElevenLabs returns an error. |
+| Header still says "Demo mode — no API keys" with keys set | Restart the server after saving `.env`. Hard-refresh the page. The badge is filled from `GET /api/status`. |
+| Grok answers, but the voice is still the browser | Look at the **terminal running `npm start`**. `[ElevenLabs] HTTP 404` usually means the voice id is not in your account (legacy George, or a Voice Library voice on the free plan). Copy a premade id from My Voices. |
+| Small note: "using the browser voice" | Expected when ElevenLabs is missing or failed. The note is not a crash — the demo keeps talking. |
 | Port already in use | Set `PORT=3001` in `.env` and restart. |
 | Changed `config.js` but answers feel the same | Restart `npm start`. Node only reads that file at boot. |
+| "What day is it?" is wrong | The London clock is injected in `config.js` on each request. Restart if you changed that helper. |

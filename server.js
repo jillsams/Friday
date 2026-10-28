@@ -12,14 +12,23 @@
  *   POST /api/speak   { text }     → audio/mpeg  (or 503 so the browser speaks)
  */
 
-require("dotenv").config();
-
 const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+
 const express = require("express");
-const { SYSTEM_PROMPT } = require("./config");
+const { buildSystemPrompt } = require("./config");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = env("PORT", "3000");
+
+// Premade voice that new / free-plan accounts can use (Eldrin).
+// Old "George" (JBFqnCBsd6RMkjVDRZzb) is a legacy Default voice — only
+// accounts created before March 2026 still have it, so it 404s for most
+// hackathon sign-ups. See README for how to pick another voice.
+const DEFAULT_VOICE_ID = "6WwXjDDEMyNmFG95zycZ";
+
+// Flash v2.5 is the model ElevenLabs documents for free-plan API use.
+const DEFAULT_TTS_MODEL = "eleven_flash_v2_5";
 
 // Let the server read JSON bodies from fetch() in the browser.
 app.use(express.json({ limit: "16kb" }));
@@ -33,9 +42,11 @@ app.use(express.static(path.join(__dirname, "public")));
  */
 app.get("/api/status", (_req, res) => {
   res.json({
-    xai: Boolean(process.env.XAI_API_KEY),
-    elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY),
-    model: process.env.XAI_MODEL || "grok-4.7",
+    xai: Boolean(env("XAI_API_KEY")),
+    elevenlabs: Boolean(env("ELEVENLABS_API_KEY")),
+    model: env("XAI_MODEL", "grok-4.7"),
+    elevenlabsVoiceId: env("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID),
+    elevenlabsModel: env("ELEVENLABS_MODEL_ID", DEFAULT_TTS_MODEL),
   });
 });
 
@@ -51,7 +62,7 @@ app.post("/api/ask", async (req, res) => {
     return res.status(400).json({ error: "Please ask a question." });
   }
 
-  const apiKey = process.env.XAI_API_KEY;
+  const apiKey = env("XAI_API_KEY");
 
   if (!apiKey) {
     return res.json({
@@ -64,7 +75,7 @@ app.post("/api/ask", async (req, res) => {
     });
   }
 
-  const model = process.env.XAI_MODEL || "grok-4.7";
+  const model = env("XAI_MODEL", "grok-4.7");
 
   try {
     // OpenAI-compatible chat completions against the xAI (SpaceXAI) API.
@@ -77,7 +88,7 @@ app.post("/api/ask", async (req, res) => {
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt() },
           { role: "user", content: question },
         ],
         // Voice answers should stay short.
@@ -102,7 +113,7 @@ app.post("/api/ask", async (req, res) => {
 
     return res.json({ demo: false, source: "xai", answer });
   } catch (err) {
-    console.error("xAI request threw", err);
+    console.error("xAI request threw", err.message || err);
     return res.status(502).json({
       error: "Could not reach the xAI API. Check your network and try again.",
     });
@@ -121,12 +132,13 @@ app.post("/api/speak", async (req, res) => {
     return res.status(400).json({ error: "Nothing to speak." });
   }
 
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = env("ELEVENLABS_API_KEY");
   if (!apiKey) {
     return res.status(503).json({ fallback: true, reason: "missing_key" });
   }
 
-  const voiceId = process.env.ELEVENLABS_VOICE_ID || "JBFqnCBsd6RMkjVDRZzb";
+  const voiceId = env("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID);
+  const ttsModel = env("ELEVENLABS_MODEL_ID", DEFAULT_TTS_MODEL);
 
   try {
     const response = await fetch(
@@ -140,15 +152,26 @@ app.post("/api/speak", async (req, res) => {
         },
         body: JSON.stringify({
           text,
-          model_id: "eleven_multilingual_v2",
+          model_id: ttsModel,
+          // mp3 is available on the free plan (PCM/wav is a paid add-on).
+          output_format: "mp3_44100_128",
         }),
       }
     );
 
     if (!response.ok) {
       const detail = await safeText(response);
-      console.error("ElevenLabs error", response.status, detail);
-      return res.status(503).json({ fallback: true, reason: "tts_failed" });
+      // Log status + body so a local test can see *why* we fell back.
+      // Never log the API key.
+      console.error("[ElevenLabs] /api/speak failed");
+      console.error(`[ElevenLabs] HTTP ${response.status} ${response.statusText}`);
+      console.error(`[ElevenLabs] voice=${voiceId} model=${ttsModel}`);
+      console.error(`[ElevenLabs] error body: ${detail || "(empty)"}`);
+      return res.status(503).json({
+        fallback: true,
+        reason: "tts_failed",
+        httpStatus: response.status,
+      });
     }
 
     const audio = Buffer.from(await response.arrayBuffer());
@@ -156,21 +179,35 @@ app.post("/api/speak", async (req, res) => {
     res.set("Cache-Control", "no-store");
     return res.send(audio);
   } catch (err) {
-    console.error("ElevenLabs request threw", err);
+    console.error("[ElevenLabs] /api/speak threw (network or fetch error)");
+    console.error("[ElevenLabs] message:", err.message || err);
     return res.status(503).json({ fallback: true, reason: "tts_failed" });
   }
 });
 
 app.listen(PORT, () => {
-  const hasXai = Boolean(process.env.XAI_API_KEY);
-  const hasTts = Boolean(process.env.ELEVENLABS_API_KEY);
+  const hasXai = Boolean(env("XAI_API_KEY"));
+  const hasTts = Boolean(env("ELEVENLABS_API_KEY"));
+  const voiceId = env("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID);
+  const ttsModel = env("ELEVENLABS_MODEL_ID", DEFAULT_TTS_MODEL);
   console.log(`Friday Voice Helper is running at http://localhost:${PORT}`);
   console.log(`  xAI:        ${hasXai ? "key found" : "DEMO MODE (no XAI_API_KEY)"}`);
   console.log(
-    `  ElevenLabs: ${hasTts ? "key found" : "browser speech fallback (no ELEVENLABS_API_KEY)"}`
+    `  ElevenLabs: ${
+      hasTts
+        ? `key found (voice=${voiceId}, model=${ttsModel})`
+        : "browser speech fallback (no ELEVENLABS_API_KEY)"
+    }`
   );
   console.log("  Edit the system prompt in config.js, then restart.");
 });
+
+/** Read env vars with trim so a trailing space in .env does not break keys. */
+function env(name, fallback = "") {
+  const value = process.env[name];
+  if (value == null || String(value).trim() === "") return fallback;
+  return String(value).trim();
+}
 
 /** Read a response body as text without throwing if it is empty. */
 async function safeText(response) {

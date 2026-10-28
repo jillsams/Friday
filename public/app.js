@@ -19,6 +19,8 @@ const emptyState = document.getElementById("empty-state");
 const askForm = document.getElementById("ask-form");
 const questionInput = document.getElementById("question-input");
 const modeBadge = document.getElementById("mode-badge");
+const voiceNote = document.getElementById("voice-note");
+const ttsPlayer = document.getElementById("tts-player");
 
 // Chrome uses webkitSpeechRecognition; some browsers use the standard name.
 const SpeechRecognition =
@@ -27,34 +29,54 @@ const SpeechRecognition =
 let recognition = null;
 let listening = false;
 let busy = false;
-let currentAudio = null;
 
 showApiMode();
 setupSpeech();
 
-micButton.addEventListener("click", toggleListen);
+micButton.addEventListener("click", () => {
+  unlockAudio();
+  toggleListen();
+});
 askForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  unlockAudio();
   const question = questionInput.value.trim();
   if (!question || busy) return;
   questionInput.value = "";
   handleQuestion(question);
 });
 
-/** Ask the server which keys are present so we can label demo mode. */
+/**
+ * Drive the header badge from GET /api/status — never leave a hardcoded
+ * "Demo mode" label on screen when keys are actually present.
+ */
 async function showApiMode() {
   try {
     const res = await fetch("/api/status");
     const data = await res.json();
-    if (!data.xai || !data.elevenlabs) {
-      modeBadge.hidden = false;
-      const parts = [];
-      if (!data.xai) parts.push("demo answers");
-      if (!data.elevenlabs) parts.push("browser voice");
-      modeBadge.textContent = `Demo mode — ${parts.join(" · ")}`;
-    }
+    applyModeBadge(data);
   } catch {
-    // Status is optional; the rest of the app still works.
+    modeBadge.hidden = true;
+    modeBadge.textContent = "";
+  }
+}
+
+function applyModeBadge(data) {
+  const parts = [];
+  if (!data.xai) parts.push("demo answers");
+  if (!data.elevenlabs) parts.push("browser voice");
+
+  if (parts.length === 0) {
+    modeBadge.hidden = true;
+    modeBadge.textContent = "";
+    return;
+  }
+
+  modeBadge.hidden = false;
+  if (!data.xai && !data.elevenlabs) {
+    modeBadge.textContent = "Demo mode — no API keys";
+  } else {
+    modeBadge.textContent = `Demo mode — ${parts.join(" · ")}`;
   }
 }
 
@@ -136,6 +158,7 @@ async function handleQuestion(question) {
   if (busy) return;
   busy = true;
   micButton.disabled = true;
+  hideVoiceNote();
 
   addBubble("you", question);
   setStatus("thinking", "Thinking");
@@ -184,20 +207,40 @@ async function speak(text) {
     if (res.ok) {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      currentAudio = new Audio(url);
-      currentAudio.onended = () => {
+      ttsPlayer.src = url;
+      ttsPlayer.onended = () => {
         URL.revokeObjectURL(url);
         setStatus("ready", "Ready");
       };
-      currentAudio.onerror = () => {
+      ttsPlayer.onerror = () => {
         URL.revokeObjectURL(url);
+        showVoiceNote("Could not play ElevenLabs audio — using the browser voice.");
         speakWithBrowser(text);
       };
-      await currentAudio.play();
-      return;
+      try {
+        await ttsPlayer.play();
+        return;
+      } catch (playErr) {
+        console.warn("ElevenLabs audio play() was blocked:", playErr);
+        URL.revokeObjectURL(url);
+        showVoiceNote("Could not play ElevenLabs audio — using the browser voice.");
+        speakWithBrowser(text);
+        return;
+      }
     }
-  } catch {
-    // Network blip — browser voice still works.
+
+    const info = await res.json().catch(() => ({}));
+    if (info.reason === "missing_key") {
+      showVoiceNote("No ElevenLabs key — using the browser voice.");
+    } else {
+      const statusBit = info.httpStatus ? ` (HTTP ${info.httpStatus})` : "";
+      showVoiceNote(
+        `ElevenLabs failed${statusBit} — using the browser voice. See the server log for details.`
+      );
+    }
+  } catch (err) {
+    console.warn("ElevenLabs request failed, using browser voice.", err);
+    showVoiceNote("ElevenLabs request failed — using the browser voice.");
   }
 
   speakWithBrowser(text);
@@ -218,11 +261,24 @@ function speakWithBrowser(text) {
   window.speechSynthesis.speak(utterance);
 }
 
+/**
+ * Call this during a click/submit. Chrome otherwise blocks Audio.play()
+ * after the Grok + ElevenLabs fetches, and we would fall back to speechSynthesis
+ * even when the mp3 downloaded fine.
+ */
+function unlockAudio() {
+  // Tiny silent wav so the page earns "media engagement" during the click.
+  ttsPlayer.src =
+    "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+  ttsPlayer.muted = true;
+  ttsPlayer.play().catch(() => {});
+  ttsPlayer.muted = false;
+}
+
 function stopSpeaking() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
-  }
+  ttsPlayer.pause();
+  ttsPlayer.removeAttribute("src");
+  ttsPlayer.load();
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
@@ -231,6 +287,16 @@ function stopSpeaking() {
 function setStatus(state, label) {
   statusEl.dataset.state = state;
   statusText.textContent = label;
+}
+
+function showVoiceNote(message) {
+  voiceNote.textContent = message;
+  voiceNote.hidden = false;
+}
+
+function hideVoiceNote() {
+  voiceNote.hidden = true;
+  voiceNote.textContent = "";
 }
 
 function addBubble(who, text, options = {}) {
