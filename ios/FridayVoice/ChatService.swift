@@ -10,7 +10,7 @@ struct ChatService {
 
     /// `webResults` nil = Grok alone (Live search off, or Tavily unavailable).
     /// Non-nil = answer only from those hits; today's London date is in the system prompt.
-    func ask(_ question: String, webResults: [TavilyService.Hit]? = nil) async -> Answer {
+    func ask(_ question: String, webResults: [TavilyService.Hit]? = nil) async throws -> Answer {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return Answer(text: "Please ask a question.", isDemo: false)
@@ -52,9 +52,11 @@ struct ChatService {
             ],
         ]
 
+        try Task.checkCancellation()
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200 else {
                 let detail = String(data: data, encoding: .utf8) ?? ""
@@ -69,6 +71,7 @@ struct ChatService {
             }
             return Answer(text: text, isDemo: false)
         } catch {
+            try Cancel.rethrow(error)
             print("xAI request threw \(error.localizedDescription)")
             return Answer(text: "Could not reach the xAI API. Check your network and try again.", isDemo: false)
         }

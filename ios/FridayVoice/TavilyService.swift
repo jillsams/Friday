@@ -20,7 +20,7 @@ struct TavilyService: Sendable {
         case unavailable(String)
     }
 
-    func search(_ query: String) async -> Outcome {
+    func search(_ query: String) async throws -> Outcome {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .unavailable("Nothing to search for.")
@@ -47,9 +47,11 @@ struct TavilyService: Sendable {
             topic: "general"
         )
 
+        try Task.checkCancellation()
         do {
             request.httpBody = try JSONEncoder().encode(body)
             let (data, response) = try await URLSession.shared.data(for: request)
+            try Task.checkCancellation()
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200 else {
                 let detail = String(data: data, encoding: .utf8) ?? "(empty)"
@@ -68,6 +70,7 @@ struct TavilyService: Sendable {
             }
             return .success(hits)
         } catch {
+            try Cancel.rethrow(error)
             print("[Tavily] request threw \(error.localizedDescription)")
             return .unavailable("Live search failed — answering without web results.")
         }

@@ -12,6 +12,13 @@ struct ContentView: View {
                 header
                 liveSearchToggle
                 statusPill
+                if let heard = model.heardQuestion {
+                    Text("You said: \(heard)")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.fridayInk)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
                 if let note = model.searchNote {
                     Text(note)
                         .font(.footnote)
@@ -26,8 +33,11 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                if model.canStop {
+                    stopButton
+                }
                 micButton
-                Text(model.speech.isListening ? "Listening… tap again when you are done" : "Tap the mic and speak, or type below")
+                Text(micHint)
                     .font(.subheadline)
                     .foregroundStyle(Color.fridayMuted)
                 transcript
@@ -106,6 +116,36 @@ struct ContentView: View {
         }
     }
 
+    private var stopButton: some View {
+        Button {
+            model.stopAnswer()
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
+                .frame(minWidth: 160, minHeight: 56)
+                .background(Color.fridayStop)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Stop")
+    }
+
+    private var micHint: String {
+        if model.speech.isListening {
+            return "Listening… tap again when you are done"
+        }
+        if model.status == .speaking {
+            return "Tap Stop, or tap the mic to interrupt and ask again"
+        }
+        if model.canStop {
+            return "Tap Stop if that isn’t what you asked"
+        }
+        return "Tap the mic and speak, or type below"
+    }
+
     private var micButton: some View {
         Button {
             Task { await model.toggleMic() }
@@ -136,8 +176,12 @@ struct ContentView: View {
             .frame(width: 132, height: 132)
         }
         .buttonStyle(.plain)
-        .disabled(model.isBusy && !model.speech.isListening)
-        .accessibilityLabel(model.speech.isListening ? "Stop listening" : "Start listening")
+        .disabled(model.isBusy && model.status != .speaking && !model.speech.isListening)
+        .accessibilityLabel(
+            model.speech.isListening ? "Stop listening" :
+            model.status == .speaking ? "Stop speaking and listen" :
+            "Start listening"
+        )
     }
 
     private var transcript: some View {
@@ -179,7 +223,7 @@ struct ContentView: View {
 
     private func bubble(_ message: ChatMessage) -> some View {
         VStack(alignment: message.role == .you ? .trailing : .leading, spacing: 4) {
-            Text(message.role == .you ? "YOU" : (message.isDemo ? "FRIDAY · DEMO" : "FRIDAY"))
+            Text(message.role == .you ? "YOU SAID" : (message.isDemo ? "FRIDAY · DEMO" : "FRIDAY"))
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(message.role == .you ? Color.fridayMuted : Color.fridayGold)
@@ -231,8 +275,8 @@ struct ContentView: View {
                         .stroke(fieldFocused ? Color.fridayGold : Color.fridayLine, lineWidth: fieldFocused ? 2 : 1)
                 )
                 .focused($fieldFocused)
-                .onSubmit { Task { await model.submitTyped() } }
-            Button("Ask") { Task { await model.submitTyped() } }
+                .onSubmit { model.submitTyped() }
+            Button("Ask") { model.submitTyped() }
                 .fontWeight(.semibold)
                 .foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.03))
                 .padding(.horizontal, 18)
@@ -277,6 +321,7 @@ private extension Color {
     static let fridayYou = Color(red: 28 / 255, green: 36 / 255, blue: 51 / 255)
     static let fridayBubble = Color(red: 26 / 255, green: 35 / 255, blue: 48 / 255)
     static let fridayDanger = Color(red: 240 / 255, green: 168 / 255, blue: 168 / 255)
+    static let fridayStop = Color(red: 0.85, green: 0.20, blue: 0.22)
     static let fridayOk = Color(red: 143 / 255, green: 212 / 255, blue: 168 / 255)
 }
 
