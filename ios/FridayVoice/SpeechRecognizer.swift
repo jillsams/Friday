@@ -22,14 +22,47 @@ final class SpeechRecognizer: ObservableObject {
 
     var isAvailable: Bool { recognizer?.isAvailable == true }
 
-    func requestPermissions() async -> Bool {
-        let speechOK = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
+    /// Microphone first, then speech. Named so the UI can say which toggle is off.
+    enum Permission {
+        case allowed
+        case microphoneOff
+        case speechOff
+    }
+
+    func requestPermissions() async -> Permission {
+        let micOK = await Self.requestMicAuth()
+        guard micOK else { return .microphoneOff }
+
+        let speech = await Self.requestSpeechAuth()
+        guard speech == .authorized else { return .speechOff }
+        return .allowed
+    }
+
+    /// Reads current mic permission without prompting. Only asks when undetermined.
+    /// `nonisolated` so the request is not inferred as MainActor-isolated.
+    nonisolated static func requestMicAuth() async -> Bool {
+        let current = AVAudioApplication.shared.recordPermission
+        if current == .granted { return true }
+        if current != .undetermined { return false }
+        return await AVAudioApplication.requestRecordPermission()
+    }
+
+    /// `requestAuthorization` delivers its callback on a background queue.
+    /// Keep this helper `nonisolated` so Swift 6 does not isolate that
+    /// closure to the main actor (which skipped the system prompt on device).
+    nonisolated static func requestSpeechAuth() async -> SFSpeechRecognizerAuthorizationStatus {
+        let current = SFSpeechRecognizer.authorizationStatus()
+        if current != .notDetermined {
+            return current
+        }
+        return await withCheckedContinuation { continuation in
+            // Apple requires the request on the main thread; the reply is not.
+            DispatchQueue.main.async {
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
             }
         }
-        guard speechOK else { return false }
-        return await AVAudioApplication.requestRecordPermission()
     }
 
     func start() throws {

@@ -58,12 +58,21 @@ final class FridayViewModel: ObservableObject {
 
         guard !isBusy else { return }
 
-        let allowed = await speech.requestPermissions()
-        guard allowed else {
-            status = .error
+        switch await speech.requestPermissions() {
+        case .allowed:
+            break
+        case .microphoneOff:
+            status = .ready
             messages.append(ChatMessage(
                 role: .friday,
-                text: "Microphone or speech recognition is blocked. Allow both in Settings, or type your question below."
+                text: "Microphone is off for Friday. Turn it on in Settings > Friday."
+            ))
+            return
+        case .speechOff:
+            status = .ready
+            messages.append(ChatMessage(
+                role: .friday,
+                text: "Speech Recognition is off for Friday. Turn it on in Settings > Friday."
             ))
             return
         }
