@@ -204,6 +204,8 @@ Edit **`ios/FridayVoice/SystemPrompt.swift`**. The string `SystemPrompt.text` is
 | `SystemPrompt.swift` | **Edit this on demo day.** |
 | `Secrets.swift` | Reads keys from Info.plist (never logs them). |
 | `SpeechRecognizer.swift` | `SFSpeechRecognizer` + `AVAudioEngine`, locale `en-GB`. |
+| `AudioSession.swift` | Shared record/playback session + ObjC exception wrapper. |
+| `ExceptionCatcher.m` | Catches Core Audio `NSException`s so the app does not abort. |
 | `ChatService.swift` | xAI `https://api.x.ai/v1/chat/completions`. |
 | `VoiceService.swift` | ElevenLabs mp3 via `AVAudioPlayer`, or `AVSpeechSynthesizer`. |
 | `Config.xcconfig` | Defaults + optional include of `Secrets.xcconfig`. |
@@ -212,8 +214,12 @@ Edit **`ios/FridayVoice/SystemPrompt.swift`**. The string `SystemPrompt.text` is
 
 ### Notes
 
-- **Microphone in the Simulator** uses your Mac's mic. Allow it when macOS/Simulator asks. On-device recognition is not always available in Simulator; the app then uses Apple's speech servers. A real iPhone can stay on-device.
+- **Microphone in the Simulator** uses your Mac's mic. If tapping the mic shows “No microphone found” (instead of crashing), the Simulator has no valid audio format yet. Try:
+  1. Simulator menu **I/O → Audio Input** and pick **Mac Microphone** (or Built-in).
+  2. Mac **System Settings → Privacy & Security → Microphone** and enable **Xcode** and **Simulator**.
+  3. Quit Simulator completely and Run again, or test on a **real iPhone** (most reliable).
+  The text box still works with no mic. On-device speech recognition is not always available in Simulator; the app then uses Apple's speech servers.
 - The first mic tap shows two system prompts: **Speech Recognition** and **Microphone**. Both must be Allow.
 - If ElevenLabs fails, a small note appears and the device voice speaks. Check the Xcode console for `[ElevenLabs] HTTP …` (the key is never printed).
 - Signing: the project uses Automatic signing and team `8882DX3GU4` (same as the original stub). If Xcode asks you to select a team, pick yours in the target's **Signing & Capabilities** tab.
-- No CocoaPods or Swift Package Manager — only Apple frameworks (`SwiftUI`, `Speech`, `AVFoundation`).
+- No CocoaPods or Swift Package Manager — only Apple frameworks (`SwiftUI`, `Speech`, `AVFoundation`). `ExceptionCatcher.m` is a tiny ObjC helper compiled into the same target.

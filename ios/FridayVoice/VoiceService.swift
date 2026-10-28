@@ -34,6 +34,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
             let audio = try await fetchElevenLabs(text)
             try playMP3(audio)
             await waitUntilFinished()
+            AppAudioSession.deactivate()
             return Result(note: nil)
         } catch {
             // Never log the API key — status + body only, like the web app.
@@ -85,9 +86,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
     }
 
     private func playMP3(_ data: Data) throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try session.setActive(true)
+        try AppAudioSession.startPlayback()
 
         let player = try AVAudioPlayer(data: data)
         player.delegate = self
@@ -98,15 +97,14 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
 
     @MainActor
     private func speakOnDevice(_ text: String) async {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try? session.setActive(true)
+        try? AppAudioSession.startPlayback()
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
         await waitUntilFinished()
+        AppAudioSession.deactivate()
     }
 
     private func waitUntilFinished() async {
