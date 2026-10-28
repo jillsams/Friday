@@ -48,6 +48,7 @@ final class FridayViewModel: ObservableObject {
         if speech.isListening {
             let text = speech.stopListening(sendFinal: false)
             if text.isEmpty {
+                AppAudioSession.deactivate()
                 status = .ready
             } else {
                 await handle(question: text)
@@ -72,7 +73,10 @@ final class FridayViewModel: ObservableObject {
             status = .listening
             voiceNote = nil
         } catch {
-            status = .error
+            // Don't crash; don't stick on Error — the text field must still work.
+            speech.stopListening(sendFinal: false)
+            AppAudioSession.deactivate()
+            status = .ready
             messages.append(ChatMessage(role: .friday, text: error.localizedDescription))
         }
     }

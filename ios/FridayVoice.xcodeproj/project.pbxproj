@@ -15,6 +15,8 @@
 		AA0100000000000000000006 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000007 /* SpeechRecognizer.swift */; };
 		AA0100000000000000000007 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000008 /* ChatService.swift */; };
 		AA0100000000000000000008 /* VoiceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000009 /* VoiceService.swift */; };
+		AA010000000000000000000C /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000013 /* AudioSession.swift */; };
+		AA010000000000000000000D /* ExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000011 /* ExceptionCatcher.m */; };
 		AA0100000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA020000000000000000000B /* Assets.xcassets */; };
 		AA010000000000000000000A /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA020000000000000000000E /* Speech.framework */; };
 		AA010000000000000000000B /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA020000000000000000000F /* AVFoundation.framework */; };
@@ -36,6 +38,10 @@
 		AA020000000000000000000D /* Secrets.example.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.example.xcconfig; sourceTree = "<group>"; };
 		AA020000000000000000000E /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		AA020000000000000000000F /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		AA0200000000000000000010 /* ExceptionCatcher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExceptionCatcher.h; sourceTree = "<group>"; };
+		AA0200000000000000000011 /* ExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExceptionCatcher.m; sourceTree = "<group>"; };
+		AA0200000000000000000012 /* FridayVoice-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FridayVoice-Bridging-Header.h"; sourceTree = "<group>"; };
+		AA0200000000000000000013 /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +77,10 @@
 				AA0200000000000000000007 /* SpeechRecognizer.swift */,
 				AA0200000000000000000008 /* ChatService.swift */,
 				AA0200000000000000000009 /* VoiceService.swift */,
+				AA0200000000000000000013 /* AudioSession.swift */,
+				AA0200000000000000000010 /* ExceptionCatcher.h */,
+				AA0200000000000000000011 /* ExceptionCatcher.m */,
+				AA0200000000000000000012 /* FridayVoice-Bridging-Header.h */,
 				AA020000000000000000000A /* Info.plist */,
 				AA020000000000000000000B /* Assets.xcassets */,
 				AA020000000000000000000C /* Config.xcconfig */,
@@ -173,6 +183,8 @@
 				AA0100000000000000000006 /* SpeechRecognizer.swift in Sources */,
 				AA0100000000000000000007 /* ChatService.swift in Sources */,
 				AA0100000000000000000008 /* VoiceService.swift in Sources */,
+				AA010000000000000000000C /* AudioSession.swift in Sources */,
+				AA010000000000000000000D /* ExceptionCatcher.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -312,6 +324,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = fit.sams.FridayVoice;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "FridayVoice/FridayVoice-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -337,6 +350,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = fit.sams.FridayVoice;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "FridayVoice/FridayVoice-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
