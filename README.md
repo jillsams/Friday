@@ -85,7 +85,7 @@ If this key is missing, `/api/ask` still returns a **demo answer** that starts w
 3. Put it in `.env` as `ELEVENLABS_API_KEY=...`
 4. Restart `npm start`. The header badge should **disappear** once both keys are loaded (it reads `/api/status`, not a hardcoded label).
 
-The default model is **`eleven_flash_v2_5`** (the model ElevenLabs documents for free-plan API calls). The default voice is **Eldrin** (`6WwXjDDEMyNmFG95zycZ`), a premade voice for current accounts.
+The default model is **`eleven_flash_v2_5`** (the model ElevenLabs documents for free-plan API calls). The default voice is **Sarah** (`EXAVITQu4vr4xnSDxMaL`), a premade voice for current accounts. Free ElevenLabs plans can only use premade/default voices via the API; library voices return HTTP 402.
 
 #### How to pick a different voice id
 
@@ -150,7 +150,7 @@ That's the whole product: one page, one server, two optional APIs, and fallbacks
 | Mic error / "Mic blocked" | Click the padlock in the address bar and allow the microphone. |
 | Always `[DEMO MODE]` answers | Add `XAI_API_KEY` to `.env` and restart. |
 | Header still says "Demo mode — no API keys" with keys set | Restart the server after saving `.env`. Hard-refresh the page. The badge is filled from `GET /api/status`. |
-| Grok answers, but the voice is still the browser | Look at the **terminal running `npm start`**. `[ElevenLabs] HTTP 404` usually means the voice id is not in your account (legacy George, or a Voice Library voice on the free plan). Copy a premade id from My Voices. |
+| Grok answers, but the voice is still the browser | Look at the **terminal running `npm start`**. `[ElevenLabs] HTTP 402` means a library voice on the free plan; `404` usually means the voice id is not in your account (legacy George). Copy a premade id from My Voices. |
 | Small note: "using the browser voice" | Expected when ElevenLabs is missing or failed. The note is not a crash — the demo keeps talking. |
 | Port already in use | Set `PORT=3001` in `.env` and restart. |
 | Changed `config.js` but answers feel the same | Restart `npm start`. Node only reads that file at boot. |
@@ -185,10 +185,10 @@ Open `Secrets.xcconfig` and paste `XAI_API_KEY` and `ELEVENLABS_API_KEY`. Leave 
 Optional in the same file:
 
 - `XAI_MODEL` (default `grok-4.7`)
-- `ELEVENLABS_VOICE_ID` (default Eldrin `6WwXjDDEMyNmFG95zycZ`, a premade voice on the free plan)
+- `ELEVENLABS_VOICE_ID` (default Sarah `EXAVITQu4vr4xnSDxMaL`, a premade voice on the free plan)
 - `ELEVENLABS_MODEL_ID` (default `eleven_flash_v2_5`)
 
-To pick another ElevenLabs voice: My Voices → three dots → **Copy voice ID**. Voice Library voices are not available on the free-plan API.
+To pick another ElevenLabs voice: My Voices → three dots → **Copy voice ID**. Free ElevenLabs plans can only use premade/default voices via the API; library voices return HTTP 402.
 
 ### How to change the iOS system prompt
 

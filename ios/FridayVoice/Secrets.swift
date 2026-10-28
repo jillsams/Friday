@@ -7,7 +7,7 @@ enum Secrets {
     static var xaiModel: String { plist("XAI_MODEL", fallback: "grok-4.7") }
 
     static var elevenLabsAPIKey: String { plist("ELEVENLABS_API_KEY") }
-    static var elevenLabsVoiceID: String { plist("ELEVENLABS_VOICE_ID", fallback: "6WwXjDDEMyNmFG95zycZ") }
+    static var elevenLabsVoiceID: String { plist("ELEVENLABS_VOICE_ID", fallback: "EXAVITQu4vr4xnSDxMaL") }
     static var elevenLabsModelID: String { plist("ELEVENLABS_MODEL_ID", fallback: "eleven_flash_v2_5") }
 
     static var hasXAIKey: Bool { !xaiAPIKey.isEmpty }
