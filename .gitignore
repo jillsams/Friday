@@ -1,0 +1,10 @@
+# Secrets — never commit a real .env file
+.env
+
+# Dependencies
+node_modules/
+
+# Logs and OS junk
+npm-debug.log*
+.DS_Store
+*.log
