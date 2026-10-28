@@ -15,6 +15,7 @@
 		AA0100000000000000000006 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000007 /* SpeechRecognizer.swift */; };
 		AA0100000000000000000007 /* ChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000008 /* ChatService.swift */; };
 		AA0100000000000000000008 /* VoiceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000009 /* VoiceService.swift */; };
+		AA010000000000000000000E /* TavilyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000014 /* TavilyService.swift */; };
 		AA010000000000000000000C /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000013 /* AudioSession.swift */; };
 		AA010000000000000000000D /* ExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = AA0200000000000000000011 /* ExceptionCatcher.m */; };
 		AA0100000000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA020000000000000000000B /* Assets.xcassets */; };
@@ -42,6 +43,7 @@
 		AA0200000000000000000011 /* ExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExceptionCatcher.m; sourceTree = "<group>"; };
 		AA0200000000000000000012 /* FridayVoice-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FridayVoice-Bridging-Header.h"; sourceTree = "<group>"; };
 		AA0200000000000000000013 /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
+		AA0200000000000000000014 /* TavilyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavilyService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 				AA0200000000000000000006 /* Secrets.swift */,
 				AA0200000000000000000007 /* SpeechRecognizer.swift */,
 				AA0200000000000000000008 /* ChatService.swift */,
+				AA0200000000000000000014 /* TavilyService.swift */,
 				AA0200000000000000000009 /* VoiceService.swift */,
 				AA0200000000000000000013 /* AudioSession.swift */,
 				AA0200000000000000000010 /* ExceptionCatcher.h */,
@@ -182,6 +185,7 @@
 				AA0100000000000000000005 /* Secrets.swift in Sources */,
 				AA0100000000000000000006 /* SpeechRecognizer.swift in Sources */,
 				AA0100000000000000000007 /* ChatService.swift in Sources */,
+				AA010000000000000000000E /* TavilyService.swift in Sources */,
 				AA0100000000000000000008 /* VoiceService.swift in Sources */,
 				AA010000000000000000000C /* AudioSession.swift in Sources */,
 				AA010000000000000000000D /* ExceptionCatcher.m in Sources */,

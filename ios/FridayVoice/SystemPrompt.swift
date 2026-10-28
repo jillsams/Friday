@@ -27,6 +27,20 @@ enum SystemPrompt {
         "\(text)\n\nThe current date and time is \(londonDateTime()) (Europe/London). Use this if the user asks what day, date, or time it is."
     }
 
+    /// Prompt when Live search is on and Tavily returned results (or an empty list).
+    static func buildLiveSearch() -> String {
+        """
+        You are Friday, a friendly and concise voice assistant.
+        Answer ONLY from the web search results provided with the question.
+        Use the current date to interpret phrases like "this weekend", "Saturday", or "this half term".
+        Answer in 2–4 short sentences so the reply is easy to speak aloud.
+        Do not include URLs, markdown, or bullet lists in the spoken text.
+        If the results do not cover the question, say so briefly and suggest one next step.
+
+        The current date and time is \(londonDateTime()) (Europe/London).
+        """
+    }
+
     /// Example: "Wednesday, 28 October 2026 at 16:45 GMT"
     private static func londonDateTime() -> String {
         let formatter = DateFormatter()

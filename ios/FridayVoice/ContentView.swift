@@ -10,7 +10,15 @@ struct ContentView: View {
             Color.fridayBg.ignoresSafeArea()
             VStack(spacing: 18) {
                 header
+                liveSearchToggle
                 statusPill
+                if let note = model.searchNote {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(Color.fridayMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                }
                 if let note = model.voiceNote {
                     Text(note)
                         .font(.footnote)
@@ -56,6 +64,21 @@ struct ContentView: View {
         }
     }
 
+    private var liveSearchToggle: some View {
+        Toggle(isOn: $model.liveSearch) {
+            Text("Live search")
+                .font(.subheadline)
+                .foregroundStyle(Color.fridayInk)
+        }
+        .tint(Color.fridayGold)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 220)
+        .background(Color.fridayCard)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.fridayLine, lineWidth: 1))
+    }
+
     private var statusPill: some View {
         HStack(spacing: 8) {
             Circle()
@@ -76,7 +99,7 @@ struct ContentView: View {
     private var statusColor: Color {
         switch model.status {
         case .listening: return Color(red: 1, green: 0.42, blue: 0.42)
-        case .thinking: return Color.fridayGold
+        case .searching, .thinking: return Color.fridayGold
         case .speaking: return Color.fridayOk
         case .error: return Color.fridayDanger
         case .ready: return Color.fridayMuted
@@ -164,6 +187,25 @@ struct ContentView: View {
                 .font(.body)
                 .foregroundStyle(Color.fridayInk)
                 .fixedSize(horizontal: false, vertical: true)
+            if !message.sources.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(message.sources) { source in
+                        Link(destination: source.url) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(source.title)
+                                    .font(.footnote)
+                                    .foregroundStyle(Color.fridayGold)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Text(source.domain)
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.fridayMuted)
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

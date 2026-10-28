@@ -178,7 +178,7 @@ cd ios/FridayVoice
 cp Secrets.example.xcconfig Secrets.xcconfig
 ```
 
-Open `Secrets.xcconfig` and paste `XAI_API_KEY` and `ELEVENLABS_API_KEY`. Leave a key blank to keep that fallback.
+Open `Secrets.xcconfig` and paste `XAI_API_KEY`, `ELEVENLABS_API_KEY`, and (for live search) `TAVILY_API_KEY`. Leave a key blank to keep that fallback.
 
 `Secrets.xcconfig` is gitignored. Xcode reads it through `Config.xcconfig` and writes the values into Info.plist at **build** time — rebuild (`Cmd+R`) after you edit keys.
 
@@ -189,6 +189,27 @@ Optional in the same file:
 - `ELEVENLABS_MODEL_ID` (default `eleven_flash_v2_5`)
 
 To pick another ElevenLabs voice: My Voices → three dots → **Copy voice ID**. Free ElevenLabs plans can only use premade/default voices via the API; library voices return HTTP 402.
+
+### Live search (Tavily) — "what's on near me"
+
+The iOS app can look up local events on the web. The user **says the town** (no location permission).
+
+1. Create a free key at [https://app.tavily.com](https://app.tavily.com).
+2. In `ios/FridayVoice/Secrets.xcconfig` add:
+
+   ```
+   TAVILY_API_KEY = tvly-your-key
+   ```
+
+3. Rebuild. Leave the **Live search** toggle on (default). Turn it off to demo Grok alone.
+
+Demo questions:
+
+- "What's on in Preston this weekend?"
+- "Are there any food markets in Preston on Saturday?"
+- "What can I do with kids in Preston this half term?"
+
+Friday searches with Tavily, then Grok answers in 2–4 spoken sentences from those results (today's Europe/London date is included so "this weekend" resolves). Up to three source links appear under the answer. If the Tavily key is missing or the request fails, a short note appears and Grok answers without the web.
 
 ### How to change the iOS system prompt
 
@@ -207,10 +228,11 @@ Edit **`ios/FridayVoice/SystemPrompt.swift`**. The string `SystemPrompt.text` is
 | `AudioSession.swift` | Shared record/playback session + ObjC exception wrapper. |
 | `ExceptionCatcher.m` | Catches Core Audio `NSException`s so the app does not abort. |
 | `ChatService.swift` | xAI `https://api.x.ai/v1/chat/completions`. |
+| `TavilyService.swift` | Live web search (`POST https://api.tavily.com/search`). |
 | `VoiceService.swift` | ElevenLabs mp3 via `AVAudioPlayer`, or `AVSpeechSynthesizer`. |
 | `Config.xcconfig` | Defaults + optional include of `Secrets.xcconfig`. |
 | `Secrets.example.xcconfig` | Template to copy. |
-| `Info.plist` | Mic and speech-recognition usage strings, plus `$(XAI_API_KEY)` placeholders. |
+| `Info.plist` | Mic and speech-recognition usage strings, plus `$(XAI_API_KEY)` / `$(TAVILY_API_KEY)` placeholders. |
 
 ### Notes
 
