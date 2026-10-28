@@ -12,7 +12,7 @@
         <p class="eyebrow">Voice helper</p>
         <h1>Friday</h1>
         <p class="tagline">Ask out loud. Get a spoken answer.</p>
-        <p id="mode-badge" class="mode-badge" hidden>Demo mode — no API keys</p>
+        <p id="mode-badge" class="mode-badge" hidden></p>
       </header>
 
       <!-- Live status: Ready / Listening / Thinking / Speaking -->
@@ -20,6 +20,9 @@
         <span class="status-dot" aria-hidden="true"></span>
         <span id="status-text">Ready</span>
       </div>
+
+      <!-- Shown when ElevenLabs is skipped and the browser voice is used -->
+      <p id="voice-note" class="voice-note" hidden></p>
 
       <button
         id="mic-button"
@@ -65,6 +68,8 @@
       </form>
     </main>
 
+    <!-- Hidden player for ElevenLabs mp3. Unlocked on the first click. -->
+    <audio id="tts-player" preload="auto"></audio>
     <script src="app.js"></script>
   </body>
 </html>
