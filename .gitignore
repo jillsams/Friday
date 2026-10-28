@@ -1,10 +1,16 @@
 # Secrets — never commit a real .env file
 .env
 
+# iOS secrets (copy from ios/FridayVoice/Secrets.example.xcconfig)
+ios/FridayVoice/Secrets.xcconfig
+
 # Dependencies
 node_modules/
 
-# Logs and OS junk
+# Logs, Xcode user state, OS junk
 npm-debug.log*
 .DS_Store
 *.log
+xcuserdata/
+*.xcuserstate
+DerivedData/

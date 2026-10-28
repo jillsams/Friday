@@ -32,7 +32,9 @@ Then open [http://localhost:3000](http://localhost:3000) in **Chrome** (speech-t
 | `public/index.html` | The single page: title, status line, mic button, transcript, text box. |
 | `public/styles.css` | Layout and the listening animation. |
 | `public/app.js` | Browser logic: speech-to-text, calling the APIs, speaking the answer. |
-| `Friday/` + `Friday.xcodeproj/` | An existing iOS stub from the original repo. The web demo does not use it. |
+| `Friday/` + `Friday.xcodeproj/` | Original Xcode stub from the first commit. Not used by the web or iOS demos. |
+| `ios/FridayVoice.xcodeproj` | Native iOS app (SwiftUI). Open this one for the iPhone/iPad demo. |
+| `ios/FridayVoice/SystemPrompt.swift` | **iOS system prompt** — same idea as `config.js`. |
 
 ---
 
@@ -153,3 +155,65 @@ That's the whole product: one page, one server, two optional APIs, and fallbacks
 | Port already in use | Set `PORT=3001` in `.env` and restart. |
 | Changed `config.js` but answers feel the same | Restart `npm start`. Node only reads that file at boot. |
 | "What day is it?" is wrong | The London clock is injected in `config.js` on each request. Restart if you changed that helper. |
+
+---
+
+## iOS app (`ios/`)
+
+A standalone SwiftUI app that does the same flow on device, calling xAI and ElevenLabs **directly** (no Node server). The web app is unchanged.
+
+### Open in Xcode
+
+1. On a Mac, open **`ios/FridayVoice.xcodeproj`** (double-click it, or File → Open in Xcode).
+2. Wait for Xcode to index. You should see the **FridayVoice** scheme in the toolbar.
+3. Pick a simulator (iPhone 15 / 16, iOS 17+) or a plugged-in iPhone.
+4. Press **Run** (▶) or `Cmd+R`.
+
+The app runs with **no keys**: type a question, get a `[DEMO MODE]` answer, and hear it with `AVSpeechSynthesizer`.
+
+### Add API keys
+
+```bash
+cd ios/FridayVoice
+cp Secrets.example.xcconfig Secrets.xcconfig
+```
+
+Open `Secrets.xcconfig` and paste `XAI_API_KEY` and `ELEVENLABS_API_KEY`. Leave a key blank to keep that fallback.
+
+`Secrets.xcconfig` is gitignored. Xcode reads it through `Config.xcconfig` and writes the values into Info.plist at **build** time — rebuild (`Cmd+R`) after you edit keys.
+
+Optional in the same file:
+
+- `XAI_MODEL` (default `grok-4.7`)
+- `ELEVENLABS_VOICE_ID` (default Eldrin `6WwXjDDEMyNmFG95zycZ`, a premade voice on the free plan)
+- `ELEVENLABS_MODEL_ID` (default `eleven_flash_v2_5`)
+
+To pick another ElevenLabs voice: My Voices → three dots → **Copy voice ID**. Voice Library voices are not available on the free-plan API.
+
+### How to change the iOS system prompt
+
+Edit **`ios/FridayVoice/SystemPrompt.swift`**. The string `SystemPrompt.text` is the prompt. Rebuild. Today's Europe/London date is appended automatically in `build()`.
+
+### What each iOS file does
+
+| File | Purpose |
+| --- | --- |
+| `FridayVoiceApp.swift` | App entry (`@main`). |
+| `ContentView.swift` | The single screen (mic, transcript, text field). |
+| `FridayViewModel.swift` | Wires mic → Grok → spoken answer. |
+| `SystemPrompt.swift` | **Edit this on demo day.** |
+| `Secrets.swift` | Reads keys from Info.plist (never logs them). |
+| `SpeechRecognizer.swift` | `SFSpeechRecognizer` + `AVAudioEngine`, locale `en-GB`. |
+| `ChatService.swift` | xAI `https://api.x.ai/v1/chat/completions`. |
+| `VoiceService.swift` | ElevenLabs mp3 via `AVAudioPlayer`, or `AVSpeechSynthesizer`. |
+| `Config.xcconfig` | Defaults + optional include of `Secrets.xcconfig`. |
+| `Secrets.example.xcconfig` | Template to copy. |
+| `Info.plist` | Mic and speech-recognition usage strings, plus `$(XAI_API_KEY)` placeholders. |
+
+### Notes
+
+- **Microphone in the Simulator** uses your Mac's mic. Allow it when macOS/Simulator asks. On-device recognition is not always available in Simulator; the app then uses Apple's speech servers. A real iPhone can stay on-device.
+- The first mic tap shows two system prompts: **Speech Recognition** and **Microphone**. Both must be Allow.
+- If ElevenLabs fails, a small note appears and the device voice speaks. Check the Xcode console for `[ElevenLabs] HTTP …` (the key is never printed).
+- Signing: the project uses Automatic signing and team `8882DX3GU4` (same as the original stub). If Xcode asks you to select a team, pick yours in the target's **Signing & Capabilities** tab.
+- No CocoaPods or Swift Package Manager — only Apple frameworks (`SwiftUI`, `Speech`, `AVFoundation`).
