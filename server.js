@@ -21,11 +21,12 @@ const { buildSystemPrompt } = require("./config");
 const app = express();
 const PORT = env("PORT", "3000");
 
-// Premade voice that new / free-plan accounts can use (Eldrin).
+// Premade voice that new / free-plan accounts can use (Sarah).
+// Library voices (e.g. Eldrin) return HTTP 402 on the free-plan API.
 // Old "George" (JBFqnCBsd6RMkjVDRZzb) is a legacy Default voice — only
 // accounts created before March 2026 still have it, so it 404s for most
 // hackathon sign-ups. See README for how to pick another voice.
-const DEFAULT_VOICE_ID = "6WwXjDDEMyNmFG95zycZ";
+const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
 // Flash v2.5 is the model ElevenLabs documents for free-plan API use.
 const DEFAULT_TTS_MODEL = "eleven_flash_v2_5";
