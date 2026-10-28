@@ -19,27 +19,39 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
     }
 
     /// Speaks `text` and returns after playback finishes (or immediately on failure to start).
-    func speak(_ text: String) async -> Result {
+    /// Throws `CancellationError` if Stop cancelled the work — caller must not treat that as a failure.
+    func speak(_ text: String) async throws -> Result {
         stop()
+        try Task.checkCancellation()
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return Result(note: nil)
         }
 
         if !Secrets.hasElevenLabsKey {
-            await speakOnDevice(text)
+            try await speakOnDevice(text)
             return Result(note: "No ElevenLabs key — using the device voice.")
         }
 
         do {
             let audio = try await fetchElevenLabs(text)
+            try Task.checkCancellation()
             try playMP3(audio)
             await waitUntilFinished()
+            try Task.checkCancellation()
             AppAudioSession.deactivate()
             return Result(note: nil)
         } catch {
+            do {
+                try Cancel.rethrow(error)
+            } catch {
+                stop()
+                AppAudioSession.deactivate()
+                throw CancellationError()
+            }
             // Never log the API key — status + body only, like the web app.
             print("[ElevenLabs] speak failed: \(error.localizedDescription)")
-            await speakOnDevice(text)
+            try Task.checkCancellation()
+            try await speakOnDevice(text)
             return Result(note: "ElevenLabs failed — using the device voice. See the Xcode console for the HTTP status.")
         }
     }
@@ -47,9 +59,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
     func stop() {
         player?.stop()
         player = nil
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+        synthesizer.stopSpeaking(at: .immediate)
         complete()
     }
 
@@ -73,6 +83,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         ])
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? 0
         guard status == 200 else {
@@ -95,7 +106,8 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         guard player.play() else { throw VoiceError.playFailed }
     }
 
-    private func speakOnDevice(_ text: String) async {
+    private func speakOnDevice(_ text: String) async throws {
+        try Task.checkCancellation()
         try? AppAudioSession.startPlayback()
 
         let utterance = AVSpeechUtterance(string: text)
@@ -103,15 +115,20 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
         await waitUntilFinished()
+        try Task.checkCancellation()
         AppAudioSession.deactivate()
     }
 
     private func waitUntilFinished() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            // Body runs synchronously on the caller (main actor) before we suspend.
-            MainActor.assumeIsolated {
-                self.finish = { continuation.resume() }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                // Body runs synchronously on the caller (main actor) before we suspend.
+                MainActor.assumeIsolated {
+                    self.finish = { continuation.resume() }
+                }
             }
+        } onCancel: { [weak self] in
+            Task { @MainActor in self?.stop() }
         }
     }
 

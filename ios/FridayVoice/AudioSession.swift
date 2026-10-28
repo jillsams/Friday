@@ -51,3 +51,12 @@ enum AudioException {
         }
     }
 }
+
+/// URLSession can throw `CancellationError` or `URLError.cancelled` when a Task is cancelled.
+enum Cancel {
+    static func rethrow(_ error: Error) throws {
+        if error is CancellationError { throw CancellationError() }
+        if (error as? URLError)?.code == .cancelled { throw CancellationError() }
+        if Task.isCancelled { throw CancellationError() }
+    }
+}
