@@ -19,6 +19,7 @@ final class SpeechRecognizer: ObservableObject {
     private var task: SFSpeechRecognitionTask?
     /// Whether we successfully installed a tap this session. Stop always
     /// calls `removeTap` anyway in case this flag is stale.
+    private var tapInstalled = false
 
     var isAvailable: Bool { recognizer?.isAvailable == true }
 
