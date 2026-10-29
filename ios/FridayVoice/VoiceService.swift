@@ -38,6 +38,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
             try playMP3(audio)
             await waitUntilFinished()
             try Task.checkCancellation()
+            releasePlayer()
             AppAudioSession.deactivate()
             return Result(note: nil)
         } catch {
@@ -57,10 +58,16 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
     }
 
     func stop() {
-        player?.stop()
-        player = nil
+        releasePlayer()
         synthesizer.stopSpeaking(at: .immediate)
         complete()
+    }
+
+    /// Drop the mp3 buffer. `AVAudioPlayer` keeps decoded audio until released.
+    private func releasePlayer() {
+        player?.stop()
+        player?.delegate = nil
+        player = nil
     }
 
     private func fetchElevenLabs(_ text: String) async throws -> Data {
@@ -98,12 +105,16 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
 
     private func playMP3(_ data: Data) throws {
         try AppAudioSession.startPlayback()
+        releasePlayer()
 
         let player = try AVAudioPlayer(data: data)
         player.delegate = self
         player.prepareToPlay()
         self.player = player
-        guard player.play() else { throw VoiceError.playFailed }
+        guard player.play() else {
+            releasePlayer()
+            throw VoiceError.playFailed
+        }
     }
 
     private func speakOnDevice(_ text: String) async throws {
@@ -116,6 +127,7 @@ final class VoiceService: NSObject, AVAudioPlayerDelegate, AVSpeechSynthesizerDe
         synthesizer.speak(utterance)
         await waitUntilFinished()
         try Task.checkCancellation()
+        releasePlayer()
         AppAudioSession.deactivate()
     }
 

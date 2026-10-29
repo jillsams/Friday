@@ -17,8 +17,8 @@ final class SpeechRecognizer: ObservableObject {
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
-    /// `removeTap` throws if nothing is installed — only call it when this is true.
-    private var tapInstalled = false
+    /// Whether we successfully installed a tap this session. Stop always
+    /// calls `removeTap` anyway in case this flag is stale.
 
     var isAvailable: Bool { recognizer?.isAvailable == true }
 
@@ -107,7 +107,7 @@ final class SpeechRecognizer: ObservableObject {
 
         let liveRequest = request
         // 3. Always drop a leftover tap (missing tap is an NSException — ignore),
-        //    then install. installTap can also raise; convert that to a Swift error.
+        //    then install. Never stack taps — that retains audio buffers until jetsam.
         AudioException.runIgnoring {
             input.removeTap(onBus: 0)
         }
@@ -115,8 +115,8 @@ final class SpeechRecognizer: ObservableObject {
 
         do {
             try AudioException.run {
-                input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-                    liveRequest.append(buffer)
+                input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak liveRequest] buffer, _ in
+                    liveRequest?.append(buffer)
                 }
             }
             tapInstalled = true
@@ -177,19 +177,16 @@ final class SpeechRecognizer: ObservableObject {
         return text
     }
 
-    /// Tears down the engine/tap without touching `inputNode` unless we installed a tap.
+    /// Full teardown on every stop so taps, buffers, and recognition tasks cannot pile up.
     private func stopEngineAndTap() {
-        if audioEngine.isRunning {
-            audioEngine.stop()
-        }
+        audioEngine.stop()
 
-        if tapInstalled {
-            // removeTap raises if there is no tap — swallow that.
-            AudioException.runIgnoring {
-                self.audioEngine.inputNode.removeTap(onBus: 0)
-            }
-            tapInstalled = false
+        // Always removeTap — `tapInstalled` can be stale after an interrupt,
+        // and a leftover tap keeps appending buffers until the process is jetsam'd.
+        AudioException.runIgnoring {
+            self.audioEngine.inputNode.removeTap(onBus: 0)
         }
+        tapInstalled = false
 
         request?.endAudio()
         request = nil

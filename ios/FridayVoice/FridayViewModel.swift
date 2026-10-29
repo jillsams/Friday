@@ -73,7 +73,13 @@ final class FridayViewModel: ObservableObject {
             return
         }
 
-        // Tap-to-interrupt: while Friday is talking, stop and listen again.
+        // Processing: tap cancels in-flight work and returns to Ready.
+        if status == .searching || status == .thinking {
+            stopAnswer()
+            return
+        }
+
+        // Speaking: tap stops her and starts listening again.
         if status == .speaking {
             haltWork()
             isBusy = false
@@ -130,6 +136,7 @@ final class FridayViewModel: ObservableObject {
     }
 
     private func haltWork() {
+        speech.stopListening(sendFinal: false)
         voice.stop()
         AppAudioSession.deactivate()
         workTask?.cancel()
@@ -145,6 +152,7 @@ final class FridayViewModel: ObservableObject {
         messages.append(ChatMessage(role: .you, text: question))
 
         workTask?.cancel()
+        workTask = nil
         workTask = Task { @MainActor [weak self] in
             await self?.runPipeline(question: question)
         }
