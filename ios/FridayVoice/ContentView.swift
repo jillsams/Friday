@@ -8,40 +8,19 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             Color.fridayBg.ignoresSafeArea()
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 header
-                liveSearchToggle
                 statusPill
-                if let heard = model.heardQuestion {
-                    Text("You said: \(heard)")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.fridayInk)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                if let note = model.searchNote {
-                    Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(Color.fridayMuted)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                if let note = model.voiceNote {
-                    Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(Color.fridayMuted)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                if model.canStop {
-                    stopButton
-                }
                 micButton
                 Text(micHint)
                     .font(.subheadline)
                     .foregroundStyle(Color.fridayMuted)
+                    .multilineTextAlignment(.center)
+                    .frame(minHeight: 20)
+                belowMic
                 transcript
                 askRow
+                liveSearchToggle
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -74,6 +53,32 @@ struct ContentView: View {
         }
     }
 
+    /// Heard question and notes sit *under* the mic so they never shove it around.
+    private var belowMic: some View {
+        VStack(spacing: 6) {
+            if let heard = model.heardQuestion {
+                Text("You said: \(heard)")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.fridayInk)
+                    .multilineTextAlignment(.center)
+            }
+            if let note = model.searchNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(Color.fridayMuted)
+                    .multilineTextAlignment(.center)
+            }
+            if let note = model.voiceNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(Color.fridayMuted)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.horizontal)
+        .frame(minHeight: 8)
+    }
+
     private var liveSearchToggle: some View {
         Toggle(isOn: $model.liveSearch) {
             Text("Live search")
@@ -87,6 +92,7 @@ struct ContentView: View {
         .background(Color.fridayCard)
         .clipShape(Capsule())
         .overlay(Capsule().stroke(Color.fridayLine, lineWidth: 1))
+        .accessibilityLabel("Live search")
     }
 
     private var statusPill: some View {
@@ -116,32 +122,15 @@ struct ContentView: View {
         }
     }
 
-    private var stopButton: some View {
-        Button {
-            model.stopAnswer()
-        } label: {
-            Label("Stop", systemImage: "stop.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 16)
-                .frame(minWidth: 160, minHeight: 56)
-                .background(Color.fridayStop)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Stop")
-    }
-
     private var micHint: String {
         if model.speech.isListening {
             return "Listening… tap again when you are done"
         }
         if model.status == .speaking {
-            return "Tap Stop, or tap the mic to interrupt and ask again"
+            return "Tap the mic to interrupt and ask again"
         }
         if model.canStop {
-            return "Tap Stop if that isn’t what you asked"
+            return "Tap the mic if that isn’t what you asked"
         }
         return "Tap the mic and speak, or type below"
     }
@@ -152,36 +141,95 @@ struct ContentView: View {
         } label: {
             ZStack {
                 if model.speech.isListening {
-                    PulseRings()
+                    PulseRings(color: Color.fridayMicListen)
                 }
                 Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(red: 0.95, green: 0.82, blue: 0.60),
-                                Color.fridayGold,
-                                Color.fridayGoldDeep,
-                            ],
-                            center: UnitPoint(x: 0.35, y: 0.30),
-                            startRadius: 4,
-                            endRadius: 80
-                        )
-                    )
+                    .fill(micFill)
                     .frame(width: 132, height: 132)
-                    .shadow(color: Color.fridayGold.opacity(0.28), radius: 16, y: 8)
+                    .shadow(color: micShadow, radius: 16, y: 8)
                 Image(systemName: "mic.fill")
                     .font(.system(size: 36, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.03))
+                    .foregroundStyle(micIconColor)
             }
             .frame(width: 132, height: 132)
         }
         .buttonStyle(.plain)
-        .disabled(model.isBusy && model.status != .speaking && !model.speech.isListening)
-        .accessibilityLabel(
-            model.speech.isListening ? "Stop listening" :
-            model.status == .speaking ? "Stop speaking and listen" :
-            "Start listening"
+        .animation(.easeInOut(duration: 0.28), value: model.status)
+        .animation(.easeInOut(duration: 0.28), value: model.speech.isListening)
+        .accessibilityLabel(micAccessibilityLabel)
+        .accessibilityHint(micAccessibilityHint)
+    }
+
+    private var micFill: RadialGradient {
+        let colors: [Color]
+        switch model.status {
+        case .listening:
+            colors = [
+                Color(red: 1.00, green: 0.52, blue: 0.50),
+                Color.fridayMicListen,
+                Color(red: 0.52, green: 0.08, blue: 0.12),
+            ]
+        case .searching, .thinking:
+            colors = [
+                Color(red: 0.78, green: 0.62, blue: 0.98),
+                Color.fridayMicProcess,
+                Color(red: 0.28, green: 0.12, blue: 0.52),
+            ]
+        case .speaking:
+            colors = [
+                Color(red: 1.00, green: 0.78, blue: 0.48),
+                Color.fridayMicSpeak,
+                Color(red: 0.68, green: 0.28, blue: 0.08),
+            ]
+        default:
+            colors = [
+                Color(red: 0.95, green: 0.82, blue: 0.60),
+                Color.fridayGold,
+                Color.fridayGoldDeep,
+            ]
+        }
+        return RadialGradient(
+            colors: colors,
+            center: UnitPoint(x: 0.35, y: 0.30),
+            startRadius: 4,
+            endRadius: 80
         )
+    }
+
+    private var micShadow: Color {
+        switch model.status {
+        case .listening: return Color.fridayMicListen.opacity(0.40)
+        case .searching, .thinking: return Color.fridayMicProcess.opacity(0.40)
+        case .speaking: return Color.fridayMicSpeak.opacity(0.40)
+        default: return Color.fridayGold.opacity(0.28)
+        }
+    }
+
+    private var micIconColor: Color {
+        switch model.status {
+        case .listening, .searching, .thinking, .speaking:
+            return .white
+        default:
+            return Color(red: 0.10, green: 0.07, blue: 0.03)
+        }
+    }
+
+    private var micAccessibilityLabel: String {
+        if model.speech.isListening { return "Stop listening and send" }
+        switch model.status {
+        case .searching, .thinking: return "Cancel"
+        case .speaking: return "Stop speaking and listen"
+        default: return "Start listening"
+        }
+    }
+
+    private var micAccessibilityHint: String {
+        if model.speech.isListening { return "Stops the microphone and sends what you said" }
+        switch model.status {
+        case .searching, .thinking: return "Cancels the current search or answer"
+        case .speaking: return "Stops Friday talking and starts listening"
+        default: return "Starts listening for a question"
+        }
     }
 
     private var transcript: some View {
@@ -206,6 +254,7 @@ struct ContentView: View {
                 }
                 .padding(16)
             }
+            .frame(minHeight: 140)
             .frame(maxHeight: .infinity)
             .background(Color.fridayCard.opacity(0.85))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -264,18 +313,25 @@ struct ContentView: View {
 
     private var askRow: some View {
         HStack(spacing: 8) {
-            TextField("Type a question as a fallback…", text: $model.draft)
-                .textInputAutocapitalization(.sentences)
-                .disableAutocorrection(false)
-                .padding(12)
-                .background(Color.fridayCard)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(fieldFocused ? Color.fridayGold : Color.fridayLine, lineWidth: fieldFocused ? 2 : 1)
-                )
-                .focused($fieldFocused)
-                .onSubmit { model.submitTyped() }
+            TextField(
+                "",
+                text: $model.draft,
+                prompt: Text("Type a question as a fallback…")
+                    .foregroundStyle(Color.secondary)
+            )
+            .foregroundStyle(Color.primary)
+            .textInputAutocapitalization(.sentences)
+            .disableAutocorrection(false)
+            .padding(12)
+            .background(Color(uiColor: .secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(fieldFocused ? Color.fridayGold : Color.fridayLine, lineWidth: fieldFocused ? 2 : 1)
+            )
+            .focused($fieldFocused)
+            .onSubmit { model.submitTyped() }
+            .accessibilityLabel("Type a question")
             Button("Ask") { model.submitTyped() }
                 .fontWeight(.semibold)
                 .foregroundStyle(Color(red: 0.10, green: 0.07, blue: 0.03))
@@ -289,13 +345,14 @@ struct ContentView: View {
 
 /// Expanding rings around the mic while listening.
 private struct PulseRings: View {
+    var color: Color = Color.fridayGold
     @State private var animate = false
 
     var body: some View {
         ZStack {
             ForEach(0..<2, id: \.self) { i in
                 Circle()
-                    .stroke(Color.fridayGold.opacity(0.45), lineWidth: 2)
+                    .stroke(color.opacity(0.45), lineWidth: 2)
                     .scaleEffect(animate ? 1.55 : 1)
                     .opacity(animate ? 0 : 0.7)
                     .animation(
@@ -321,10 +378,18 @@ private extension Color {
     static let fridayYou = Color(red: 28 / 255, green: 36 / 255, blue: 51 / 255)
     static let fridayBubble = Color(red: 26 / 255, green: 35 / 255, blue: 48 / 255)
     static let fridayDanger = Color(red: 240 / 255, green: 168 / 255, blue: 168 / 255)
-    static let fridayStop = Color(red: 0.85, green: 0.20, blue: 0.22)
     static let fridayOk = Color(red: 143 / 255, green: 212 / 255, blue: 168 / 255)
+    static let fridayMicListen = Color(red: 0.86, green: 0.20, blue: 0.24)
+    static let fridayMicProcess = Color(red: 0.48, green: 0.28, blue: 0.78)
+    static let fridayMicSpeak = Color(red: 0.95, green: 0.48, blue: 0.18)
 }
 
-#Preview {
+#Preview("Dark") {
     ContentView()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Light") {
+    ContentView()
+        .preferredColorScheme(.light)
 }
