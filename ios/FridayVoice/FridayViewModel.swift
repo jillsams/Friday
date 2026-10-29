@@ -73,19 +73,14 @@ final class FridayViewModel: ObservableObject {
             return
         }
 
-        // Processing: tap cancels in-flight work and returns to Ready.
-        if status == .searching || status == .thinking {
+        // Speaking or processing: stop audio, cancel in-flight work, stay Ready.
+        // Do not start listening — the next tap from Ready does that.
+        if canStop {
             stopAnswer()
             return
         }
 
-        // Speaking: tap stops her and starts listening again.
-        if status == .speaking {
-            haltWork()
-            isBusy = false
-        } else {
-            guard !isBusy else { return }
-        }
+        guard !isBusy else { return }
 
         switch await speech.requestPermissions() {
         case .allowed:
@@ -136,11 +131,13 @@ final class FridayViewModel: ObservableObject {
     }
 
     private func haltWork() {
+        // Cancel first so speak/search completion cannot continue the pipeline
+        // (and must not auto-restart listening).
+        workTask?.cancel()
+        workTask = nil
         speech.stopListening(sendFinal: false)
         voice.stop()
         AppAudioSession.deactivate()
-        workTask?.cancel()
-        workTask = nil
     }
 
     private func handle(question: String) {
@@ -198,7 +195,7 @@ final class FridayViewModel: ObservableObject {
             voice.stop()
             AppAudioSession.deactivate()
             isBusy = false
-            // Stop / mic-interrupt already niled workTask and may have moved to Listening.
+            // Mic-interrupt already niled workTask and set Ready. Do not start listening.
             if workTask != nil {
                 workTask = nil
                 status = .ready
