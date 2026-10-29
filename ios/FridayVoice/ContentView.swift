@@ -114,9 +114,9 @@ struct ContentView: View {
 
     private var statusColor: Color {
         switch model.status {
-        case .listening: return Color(red: 1, green: 0.42, blue: 0.42)
+        case .listening: return Color.fridayMicListen
         case .searching, .thinking: return Color.fridayGold
-        case .speaking: return Color.fridayOk
+        case .speaking: return Color.fridayMicSpeak
         case .error: return Color.fridayDanger
         case .ready: return Color.fridayMuted
         }
@@ -127,10 +127,10 @@ struct ContentView: View {
             return "Listening… tap again when you are done"
         }
         if model.status == .speaking {
-            return "Tap the mic to interrupt and ask again"
+            return "Tap the mic to stop"
         }
         if model.canStop {
-            return "Tap the mic if that isn’t what you asked"
+            return "Tap the mic to cancel"
         }
         return "Tap the mic and speak, or type below"
     }
@@ -165,9 +165,9 @@ struct ContentView: View {
         switch model.status {
         case .listening:
             colors = [
-                Color(red: 1.00, green: 0.52, blue: 0.50),
+                Color(red: 0.42, green: 0.92, blue: 0.58),
                 Color.fridayMicListen,
-                Color(red: 0.52, green: 0.08, blue: 0.12),
+                Color(red: 0.06, green: 0.38, blue: 0.18),
             ]
         case .searching, .thinking:
             colors = [
@@ -177,9 +177,9 @@ struct ContentView: View {
             ]
         case .speaking:
             colors = [
-                Color(red: 1.00, green: 0.78, blue: 0.48),
+                Color(red: 1.00, green: 0.52, blue: 0.50),
                 Color.fridayMicSpeak,
-                Color(red: 0.68, green: 0.28, blue: 0.08),
+                Color(red: 0.52, green: 0.08, blue: 0.12),
             ]
         default:
             colors = [
@@ -218,7 +218,7 @@ struct ContentView: View {
         if model.speech.isListening { return "Stop listening and send" }
         switch model.status {
         case .searching, .thinking: return "Cancel"
-        case .speaking: return "Stop speaking and listen"
+        case .speaking: return "Stop speaking"
         default: return "Start listening"
         }
     }
@@ -226,8 +226,8 @@ struct ContentView: View {
     private var micAccessibilityHint: String {
         if model.speech.isListening { return "Stops the microphone and sends what you said" }
         switch model.status {
-        case .searching, .thinking: return "Cancels the current search or answer"
-        case .speaking: return "Stops Friday talking and starts listening"
+        case .searching, .thinking: return "Stops audio and cancels the current search or answer"
+        case .speaking: return "Stops Friday talking and returns to ready"
         default: return "Starts listening for a question"
         }
     }
@@ -378,10 +378,9 @@ private extension Color {
     static let fridayYou = Color(red: 28 / 255, green: 36 / 255, blue: 51 / 255)
     static let fridayBubble = Color(red: 26 / 255, green: 35 / 255, blue: 48 / 255)
     static let fridayDanger = Color(red: 240 / 255, green: 168 / 255, blue: 168 / 255)
-    static let fridayOk = Color(red: 143 / 255, green: 212 / 255, blue: 168 / 255)
-    static let fridayMicListen = Color(red: 0.86, green: 0.20, blue: 0.24)
+    static let fridayMicListen = Color(red: 0.18, green: 0.72, blue: 0.38)
     static let fridayMicProcess = Color(red: 0.48, green: 0.28, blue: 0.78)
-    static let fridayMicSpeak = Color(red: 0.95, green: 0.48, blue: 0.18)
+    static let fridayMicSpeak = Color(red: 0.86, green: 0.20, blue: 0.24)
 }
 
 #Preview("Dark") {
