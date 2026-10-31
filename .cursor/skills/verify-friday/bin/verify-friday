@@ -1,0 +1,1074 @@
+#!/usr/bin/env node
+/**
+ * Verification harness for the Friday Voice Helper web page.
+ * Scaffolding for .cursor/skills/verify-friday — not product code.
+ *
+ * Talks to headless Chrome over the DevTools protocol and to the
+ * Express server this run started. It never kills a process it did
+ * not record in its own state file.
+ */
+
+const crypto = require("crypto");
+const fs = require("fs");
+const http = require("http");
+const net = require("net");
+const path = require("path");
+const { spawn, spawnSync } = require("child_process");
+
+const ROOT = path.resolve(__dirname, "../../../..");
+const READY_LINE_PREFIX = "Friday Voice Helper is running at http://localhost:";
+const DEMO_BADGE = "Demo mode — no API keys";
+const EMPTY_COPY = "Nothing yet. Ask Friday a question to start.";
+
+function die(message) {
+  process.stderr.write(`verify-friday: ${message}\n`);
+  process.exit(1);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function runId() {
+  const id = process.env.FRIDAY_VERIFY_RUN;
+  if (!id || !/^[A-Za-z0-9._-]+$/.test(id)) {
+    die(
+      "Set FRIDAY_VERIFY_RUN to a short id (letters, numbers, dot, dash, underscore)."
+    );
+  }
+  return id;
+}
+
+function verifyPort() {
+  const raw = process.env.FRIDAY_VERIFY_PORT || "4173";
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 45535) {
+    die(`FRIDAY_VERIFY_PORT must be an integer from 1 to 45535, got ${raw}`);
+  }
+  return port;
+}
+
+function scratchDir(id) {
+  return path.join("/tmp/friday-verify", id);
+}
+
+function statePath(id) {
+  return path.join(scratchDir(id), "state.json");
+}
+
+function evidenceDir(id) {
+  return path.join(ROOT, ".cursor/skills/verify-friday/artifacts", id);
+}
+
+function loadState() {
+  const id = runId();
+  const file = statePath(id);
+  if (!fs.existsSync(file)) {
+    die(`No state at ${file}. Run launch for FRIDAY_VERIFY_RUN=${id} first.`);
+  }
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function saveState(state) {
+  const file = statePath(state.runId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => {
+        resolve({
+          status: res.statusCode,
+          text: Buffer.concat(chunks).toString("utf8"),
+        });
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(5000, () => {
+      req.destroy(new Error(`timeout GET ${url}`));
+    });
+  });
+}
+
+async function httpJson(url) {
+  const res = await httpGet(url);
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`GET ${url} -> ${res.status} ${res.text.slice(0, 180)}`);
+  }
+  return JSON.parse(res.text);
+}
+
+function listeners(port) {
+  const out = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], {
+    encoding: "utf8",
+  });
+  if (out.error) die(`lsof failed: ${out.error.message}`);
+  if (!out.stdout || !out.stdout.trim()) return [];
+  return out.stdout
+    .trim()
+    .split("\n")
+    .slice(1)
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.trim().split(/\s+/);
+      return { command: parts[0], pid: Number(parts[1]), line };
+    });
+}
+
+function alive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function commandLine(pid) {
+  const out = spawnSync("ps", ["-p", String(pid), "-o", "args="], {
+    encoding: "utf8",
+  });
+  return (out.stdout || "").trim();
+}
+
+function killRecorded(pid) {
+  if (!pid || !alive(pid)) return "already-stopped";
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      return "already-stopped";
+    }
+  }
+  const deadline = Date.now() + 2000;
+  while (alive(pid) && Date.now() < deadline) {
+    spawnSync("sleep", ["0.1"]);
+  }
+  if (alive(pid)) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* gone */
+      }
+    }
+  }
+  return alive(pid) ? "still-alive" : "stopped";
+}
+
+function isPinnedChromeWrapper(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(2);
+    const n = fs.readSync(fd, buf, 0, 2, 0);
+    if (n < 2 || buf.toString() !== "#!") return false;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  const text = fs.readFileSync(file, "utf8");
+  return text.includes("--remote-debugging-port=");
+}
+
+function resolveChrome() {
+  const candidates = [
+    "/usr/bin/google-chrome-stable",
+    "/opt/google/chrome/google-chrome",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (seen.has(candidate) || !fs.existsSync(candidate)) continue;
+    seen.add(candidate);
+    if (isPinnedChromeWrapper(candidate)) continue;
+    return candidate;
+  }
+  die(
+    "No Chrome binary found. Expected google-chrome-stable or chromium. The google-chrome wrapper that hardcodes --remote-debugging-port is skipped."
+  );
+}
+
+function parseArgs(argv) {
+  const flags = {};
+  const positionals = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg.startsWith("--")) {
+      const key = arg.slice(2);
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("--")) flags[key] = true;
+      else {
+        flags[key] = next;
+        i += 1;
+      }
+    } else positionals.push(arg);
+  }
+  return { flags, positionals };
+}
+
+function connectWebSocket(wsUrl) {
+  const url = new URL(wsUrl);
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(Number(url.port), url.hostname);
+    socket.setNoDelay(true);
+    const key = crypto.randomBytes(16).toString("base64");
+    let buffer = Buffer.alloc(0);
+    let upgraded = false;
+    let fragments = [];
+    const messageListeners = [];
+    const fail = (err) => {
+      if (!upgraded) reject(err);
+      socket.destroy();
+    };
+
+    function encodeFrame(opcode, payload) {
+      const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+      const mask = crypto.randomBytes(4);
+      let header;
+      if (body.length < 126) {
+        header = Buffer.from([0x80 | opcode, 0x80 | body.length]);
+      } else if (body.length < 65536) {
+        header = Buffer.alloc(4);
+        header[0] = 0x80 | opcode;
+        header[1] = 0x80 | 126;
+        header.writeUInt16BE(body.length, 2);
+      } else {
+        header = Buffer.alloc(10);
+        header[0] = 0x80 | opcode;
+        header[1] = 0x80 | 127;
+        header.writeBigUInt64BE(BigInt(body.length), 2);
+      }
+      const masked = Buffer.alloc(body.length);
+      for (let i = 0; i < body.length; i += 1) masked[i] = body[i] ^ mask[i % 4];
+      return Buffer.concat([header, mask, masked]);
+    }
+
+    function consume() {
+      while (buffer.length >= 2) {
+        const b0 = buffer[0];
+        const b1 = buffer[1];
+        const fin = (b0 & 0x80) !== 0;
+        const opcode = b0 & 0x0f;
+        const masked = (b1 & 0x80) !== 0;
+        let len = b1 & 0x7f;
+        let pos = 2;
+        if (len === 126) {
+          if (buffer.length < pos + 2) return;
+          len = buffer.readUInt16BE(pos);
+          pos += 2;
+        } else if (len === 127) {
+          if (buffer.length < pos + 8) return;
+          const big = buffer.readBigUInt64BE(pos);
+          if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
+            fail(new Error("WebSocket frame too large"));
+            return;
+          }
+          len = Number(big);
+          pos += 8;
+        }
+        const maskLen = masked ? 4 : 0;
+        if (buffer.length < pos + maskLen + len) return;
+        let payload = buffer.slice(pos + maskLen, pos + maskLen + len);
+        if (masked) {
+          const mask = buffer.slice(pos, pos + 4);
+          payload = Buffer.from(payload);
+          for (let i = 0; i < payload.length; i += 1) payload[i] ^= mask[i % 4];
+        }
+        buffer = buffer.slice(pos + maskLen + len);
+        if (opcode === 9) {
+          socket.write(encodeFrame(10, payload));
+          continue;
+        }
+        if (opcode === 8) {
+          socket.end();
+          continue;
+        }
+        if (opcode === 1 || opcode === 0) {
+          if (opcode === 1 && fin) {
+            const text = payload.toString("utf8");
+            messageListeners.forEach((fn) => fn(text));
+          } else if (opcode === 1) {
+            fragments = [payload];
+          } else {
+            fragments.push(payload);
+            if (fin) {
+              const text = Buffer.concat(fragments).toString("utf8");
+              fragments = [];
+              messageListeners.forEach((fn) => fn(text));
+            }
+          }
+        }
+      }
+    }
+
+    socket.on("error", fail);
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (!upgraded) {
+        const end = buffer.indexOf("\r\n\r\n");
+        if (end === -1) return;
+        const head = buffer.slice(0, end).toString("utf8");
+        if (!head.startsWith("HTTP/1.1 101")) {
+          fail(new Error(`WebSocket upgrade failed: ${head.split("\r\n")[0]}`));
+          return;
+        }
+        buffer = buffer.slice(end + 4);
+        upgraded = true;
+        resolve(api);
+      }
+      consume();
+    });
+
+    const api = {
+      send(text) {
+        socket.write(encodeFrame(1, text));
+      },
+      onMessage(fn) {
+        messageListeners.push(fn);
+      },
+      close() {
+        socket.end();
+      },
+    };
+
+    socket.write(
+      `GET ${url.pathname}${url.search} HTTP/1.1\r\n` +
+        `Host: ${url.host}\r\n` +
+        "Upgrade: websocket\r\n" +
+        "Connection: Upgrade\r\n" +
+        `Sec-WebSocket-Key: ${key}\r\n` +
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    );
+  });
+}
+
+function cdp(ws) {
+  let nextId = 0;
+  const pending = new Map();
+  ws.onMessage((text) => {
+    let msg;
+    try {
+      msg = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (!msg.id || !pending.has(msg.id)) return;
+    const { resolve, reject, timer } = pending.get(msg.id);
+    clearTimeout(timer);
+    pending.delete(msg.id);
+    if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+    else resolve(msg.result || {});
+  });
+  function send(method, params = {}) {
+    const id = ++nextId;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error(`CDP timeout: ${method}`));
+      }, 20000);
+      pending.set(id, { resolve, reject, timer });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  send.close = () => ws.close();
+  return send;
+}
+
+const READ_EXPR = `(() => {
+  const badge = document.getElementById("mode-badge");
+  const voice = document.getElementById("voice-note");
+  const empty = document.getElementById("empty-state");
+  const bubbles = [...document.querySelectorAll("#transcript .bubble")].map((bubble) => {
+    const who = bubble.querySelector(".who");
+    const body = [...bubble.querySelectorAll("span")].find((span) => !span.classList.contains("who"));
+    return {
+      who: who ? who.textContent : "",
+      text: body ? body.textContent : "",
+      demo: bubble.classList.contains("demo"),
+    };
+  });
+  return {
+    title: document.title,
+    heading: document.querySelector("h1") ? document.querySelector("h1").textContent : "",
+    badgeHidden: badge ? badge.hidden : true,
+    badge: badge ? badge.textContent : "",
+    statusState: document.getElementById("status") ? document.getElementById("status").dataset.state : "",
+    statusText: document.getElementById("status-text") ? document.getElementById("status-text").textContent : "",
+    voiceNoteHidden: voice ? voice.hidden : true,
+    voiceNote: voice ? voice.textContent : "",
+    emptyState: empty ? empty.textContent.trim() : null,
+    micDisabled: document.getElementById("mic-button").disabled,
+    micLabel: document.getElementById("mic-button").getAttribute("aria-label"),
+    unsupportedHidden: document.getElementById("unsupported").hidden,
+    inputValue: document.getElementById("question-input").value,
+    bubbles,
+    statusLog: window.__fridayVerifyStatusLog || [],
+    speechVoices: window.speechSynthesis ? window.speechSynthesis.getVoices().length : null,
+    speechSpeaking: window.speechSynthesis ? window.speechSynthesis.speaking : null,
+    speechPending: window.speechSynthesis ? window.speechSynthesis.pending : null,
+  };
+})()`;
+
+const OBSERVER_EXPR = `(() => {
+  if (window.__fridayVerifyObserving) return window.__fridayVerifyStatusLog.length;
+  window.__fridayVerifyObserving = true;
+  window.__fridayVerifyStatusLog = [];
+  const status = document.getElementById("status");
+  const voice = document.getElementById("voice-note");
+  const push = () => {
+    window.__fridayVerifyStatusLog.push({
+      state: status.dataset.state,
+      text: document.getElementById("status-text").textContent,
+      voiceHidden: voice.hidden,
+      voice: voice.textContent,
+    });
+  };
+  const watch = { attributes: true, childList: true, subtree: true, characterData: true };
+  new MutationObserver(push).observe(status, watch);
+  new MutationObserver(push).observe(voice, watch);
+  push();
+  return window.__fridayVerifyStatusLog.length;
+})()`;
+
+async function evaluate(send, expression) {
+  const result = await send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(
+      result.exceptionDetails.text || JSON.stringify(result.exceptionDetails)
+    );
+  }
+  return result.result.value;
+}
+
+function axValue(field) {
+  if (!field) return "";
+  if (typeof field === "string") return field;
+  return field.value || "";
+}
+
+async function enablePage(send) {
+  await send("Page.enable");
+  await send("Runtime.enable");
+  await send("DOM.enable");
+  await send("Accessibility.enable");
+  try {
+    await send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  } catch {
+    /* older Chrome builds omit this */
+  }
+}
+
+async function withPage(state, fn) {
+  const list = await httpJson(`http://127.0.0.1:${state.chromePort}/json/list`);
+  const pages = list.filter((target) => target.type === "page");
+  const page =
+    pages.find((target) => target.url.startsWith(state.baseUrl)) || pages[0];
+  if (!page || !page.webSocketDebuggerUrl) {
+    die("Chrome has no page target. Run browser open.");
+  }
+  const ws = await connectWebSocket(page.webSocketDebuggerUrl);
+  const send = cdp(ws);
+  try {
+    await enablePage(send);
+    return await fn(send);
+  } finally {
+    send.close();
+  }
+}
+
+async function ensureChrome(state) {
+  if (state.chromePid && alive(state.chromePid)) return state;
+  const chromePort = state.port + 20000;
+  const busy = listeners(chromePort);
+  if (busy.length) {
+    die(
+      `Chrome debugging port ${chromePort} is already in use by pid ${busy
+        .map((row) => row.pid)
+        .join(",")}. Pick another FRIDAY_VERIFY_PORT.`
+    );
+  }
+  const chrome = resolveChrome();
+  const profile = path.join(scratchDir(state.runId), "chrome-profile");
+  fs.rmSync(profile, { recursive: true, force: true });
+  fs.mkdirSync(profile, { recursive: true });
+  const logFd = fs.openSync(path.join(scratchDir(state.runId), "chrome.log"), "a");
+  const child = spawn(
+    chrome,
+    [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--disable-extensions",
+      `--remote-debugging-port=${chromePort}`,
+      `--user-data-dir=${profile}`,
+      "--window-size=1280,900",
+      "about:blank",
+    ],
+    { detached: true, stdio: ["ignore", logFd, logFd] }
+  );
+  child.unref();
+  fs.closeSync(logFd);
+  state.chromePid = child.pid;
+  state.chromePort = chromePort;
+  state.chromeBin = chrome;
+  saveState(state);
+  const deadline = Date.now() + 10000;
+  let lastError = "not listening";
+  while (Date.now() < deadline) {
+    if (!alive(child.pid)) {
+      die(`Chrome exited early. See ${path.join(scratchDir(state.runId), "chrome.log")}`);
+    }
+    try {
+      await httpJson(`http://127.0.0.1:${chromePort}/json/version`);
+      return state;
+    } catch (err) {
+      lastError = err.message;
+      await sleep(100);
+    }
+  }
+  die(`Chrome did not open a debugging port: ${lastError}`);
+}
+
+async function waitForApp(send) {
+  const deadline = Date.now() + 10000;
+  let page = null;
+  while (Date.now() < deadline) {
+    page = await evaluate(send, READ_EXPR);
+    if (
+      page.heading === "Friday" &&
+      page.title === "Friday Voice Helper" &&
+      page.badge === DEMO_BADGE &&
+      page.statusText === "Ready" &&
+      page.emptyState === EMPTY_COPY
+    ) {
+      await evaluate(send, OBSERVER_EXPR);
+      return page;
+    }
+    await sleep(50);
+  }
+  die(`Page did not reach the demo ready state: ${JSON.stringify(page)}`);
+}
+
+async function clickNamed(send, role, name) {
+  const tree = await send("Accessibility.getFullAXTree");
+  const hits = (tree.nodes || []).filter(
+    (node) =>
+      !node.ignored && axValue(node.role) === role && axValue(node.name) === name
+  );
+  if (hits.length !== 1) {
+    const named = (tree.nodes || [])
+      .filter((node) => !node.ignored && axValue(node.name))
+      .map((node) => `${axValue(node.role)}:${JSON.stringify(axValue(node.name))}`)
+      .slice(0, 30);
+    die(
+      `Expected one ${role} named ${JSON.stringify(name)}, found ${hits.length}. Named nodes: ${named.join(" | ")}`
+    );
+  }
+  const backendNodeId = hits[0].backendDOMNodeId;
+  if (!backendNodeId) die(`AX node ${role} ${name} has no backendDOMNodeId`);
+  try {
+    await send("DOM.scrollIntoViewIfNeeded", { backendNodeId });
+  } catch {
+    /* optional */
+  }
+  const box = await send("DOM.getBoxModel", { backendNodeId });
+  const quad = box.model && box.model.content;
+  if (!quad) die(`No content box for ${role} ${name}`);
+  const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
+  const y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+  return { x, y };
+}
+
+async function markStatusLog(send) {
+  const length = await evaluate(send, OBSERVER_EXPR);
+  return length;
+}
+
+async function waitStatus(send, mark, text) {
+  const deadline = Date.now() + 35000;
+  let page = null;
+  while (Date.now() < deadline) {
+    page = await evaluate(send, READ_EXPR);
+    const seen = page.statusLog.slice(mark).some((entry) => entry.text === text);
+    if (seen) return page;
+    await sleep(50);
+  }
+  die(
+    `Timed out waiting for status text ${JSON.stringify(text)}. Page: ${JSON.stringify(page)}`
+  );
+}
+
+async function waitAnswer(send) {
+  const deadline = Date.now() + 8000;
+  let page = null;
+  while (Date.now() < deadline) {
+    page = await evaluate(send, READ_EXPR);
+    const answered = page.bubbles.some((bubble) => bubble.who.startsWith("Friday"));
+    const voiceNote = page.voiceNoteHidden === false && page.voiceNote.length > 0;
+    if (answered && voiceNote) return page;
+    await sleep(50);
+  }
+  die(`Timed out waiting for a Friday bubble and voice note. Page: ${JSON.stringify(page)}`);
+}
+
+function printJson(value) {
+  process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function requireFeature(flags) {
+  if (!flags.feature || !flags.entry) {
+    die("Proof captures need --feature <id> and --entry <user entry point>.");
+  }
+  return { feature: flags.feature, entry: flags.entry };
+}
+
+async function cmdLaunch() {
+  const id = runId();
+  const port = verifyPort();
+  const existing = statePath(id);
+  if (fs.existsSync(existing)) {
+    const prior = JSON.parse(fs.readFileSync(existing, "utf8"));
+    if (alive(prior.pid) || alive(prior.chromePid)) {
+      die(`Run ${id} is already up. Run cleanup before launching it again.`);
+    }
+  }
+  if (!fs.existsSync(path.join(ROOT, "node_modules/express"))) {
+    die(`Missing node_modules/express. From ${ROOT} run: npm install`);
+  }
+  const occupied = listeners(port);
+  if (occupied.length) {
+    die(
+      `Port ${port} is already listened on by ${occupied
+        .map((row) => `${row.command}:${row.pid}`)
+        .join(", ")}. Set FRIDAY_VERIFY_PORT to a free port. This harness will not kill it.`
+    );
+  }
+  fs.mkdirSync(scratchDir(id), { recursive: true });
+  const logPath = path.join(scratchDir(id), "server.log");
+  const logFd = fs.openSync(logPath, "a");
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: ROOT,
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+    env: {
+      ...process.env,
+      PORT: String(port),
+      XAI_API_KEY: "",
+      ELEVENLABS_API_KEY: "",
+    },
+  });
+  child.unref();
+  fs.closeSync(logFd);
+  const state = {
+    runId: id,
+    port,
+    pid: child.pid,
+    baseUrl: `http://127.0.0.1:${port}`,
+    logPath,
+    chromePid: null,
+    chromePort: null,
+    chromeBin: null,
+    demoMode: true,
+  };
+  saveState(state);
+  const deadline = Date.now() + 10000;
+  let failure = "server did not become ready";
+  while (Date.now() < deadline) {
+    if (!alive(child.pid)) {
+      const tail = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+      die(`Server exited early.\n${tail}`);
+    }
+    const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf8") : "";
+    if (!log.includes(`${READY_LINE_PREFIX}${port}`)) {
+      await sleep(50);
+      continue;
+    }
+    try {
+      const root = await httpGet(`${state.baseUrl}/`);
+      const status = await httpJson(`${state.baseUrl}/api/status`);
+      const appJs = await httpGet(`${state.baseUrl}/app.js`);
+      if (
+        root.status === 200 &&
+        root.text.includes("<title>Friday Voice Helper</title>") &&
+        root.text.includes("<h1>Friday</h1>") &&
+        appJs.status === 200 &&
+        status.xai === false &&
+        status.elevenlabs === false
+      ) {
+        printJson({
+          ready: true,
+          url: `${state.baseUrl}/`,
+          pid: state.pid,
+          log: logPath,
+          badge: DEMO_BADGE,
+        });
+        return;
+      }
+      failure = `HTTP not usable yet root=${root.status} app.js=${appJs.status} status=${JSON.stringify(status)}`;
+    } catch (err) {
+      failure = err.message;
+    }
+    await sleep(50);
+  }
+  die(failure);
+}
+
+async function cmdDoctor() {
+  const state = loadState();
+  const problems = [];
+  const serverAlive = alive(state.pid);
+  const cmdline = serverAlive ? commandLine(state.pid) : "";
+  if (!serverAlive) problems.push("server pid is not alive");
+  if (serverAlive && !cmdline.includes("server.js")) {
+    problems.push(`server cmdline is not server.js: ${cmdline}`);
+  }
+  const owners = listeners(state.port);
+  const owns = owners.some((row) => row.pid === state.pid);
+  if (!owns) {
+    problems.push(
+      `port ${state.port} owners [${owners
+        .map((row) => row.pid)
+        .join(", ")}] do not include recorded pid ${state.pid}`
+    );
+  }
+  let rootStatus = null;
+  let api = null;
+  let titleOk = false;
+  try {
+    const root = await httpGet(`${state.baseUrl}/`);
+    rootStatus = root.status;
+    titleOk =
+      root.status === 200 && root.text.includes("<title>Friday Voice Helper</title>");
+    if (!titleOk) problems.push("GET / did not return the Friday Voice Helper page");
+    api = await httpJson(`${state.baseUrl}/api/status`);
+    if (api.xai !== false || api.elevenlabs !== false) {
+      problems.push(
+        `expected demo mode with both keys absent, got ${JSON.stringify(api)}`
+      );
+    }
+  } catch (err) {
+    problems.push(err.message);
+  }
+  const log = fs.existsSync(state.logPath) ? fs.readFileSync(state.logPath, "utf8") : "";
+  const readyLine = log.includes(`${READY_LINE_PREFIX}${state.port}`);
+  if (!readyLine) problems.push("server log is missing the ready line");
+  let chrome = "not-started";
+  if (state.chromePid) {
+    chrome = alive(state.chromePid) ? "alive" : "dead";
+    if (chrome === "dead") problems.push("recorded Chrome pid is dead");
+    if (chrome === "alive") {
+      try {
+        await httpJson(`http://127.0.0.1:${state.chromePort}/json/version`);
+      } catch (err) {
+        problems.push(`Chrome debugging port failed: ${err.message}`);
+      }
+    }
+  }
+  const report = {
+    ok: problems.length === 0,
+    runId: state.runId,
+    url: `${state.baseUrl}/`,
+    pid: state.pid,
+    cmdline,
+    portOwners: owners.map((row) => row.pid),
+    httpRoot: rootStatus,
+    title: titleOk ? "Friday Voice Helper" : null,
+    apiStatus: api,
+    readyLine,
+    chrome,
+    problems,
+  };
+  printJson(report);
+  if (!report.ok) process.exit(1);
+}
+
+async function cmdBrowserOpen() {
+  let state = loadState();
+  state = await ensureChrome(state);
+  const page = await withPage(state, async (send) => {
+    await send("Page.navigate", { url: `${state.baseUrl}/` });
+    return waitForApp(send);
+  });
+  printJson({ opened: `${state.baseUrl}/`, page });
+}
+
+async function cmdBrowserRead(flags) {
+  const state = loadState();
+  if (!state.chromePid) die("Chrome is not started. Run browser open.");
+  const page = await withPage(state, (send) => evaluate(send, READ_EXPR));
+  if (flags.path) {
+    const meta = requireFeature(flags);
+    writeArtifact(flags.path, JSON.stringify({ ...meta, url: `${state.baseUrl}/`, page }, null, 2));
+  }
+  printJson(page);
+}
+
+async function cmdBrowserFill(flags) {
+  const state = loadState();
+  const role = flags.role;
+  const name = flags.name;
+  if (!role || name === undefined || flags.value === undefined) {
+    die('browser fill requires --role, --name, and --value');
+  }
+  const result = await withPage(state, async (send) => {
+    await clickNamed(send, role, name);
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      modifiers: 2,
+      key: "a",
+      code: "KeyA",
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      modifiers: 2,
+      key: "a",
+      code: "KeyA",
+      windowsVirtualKeyCode: 65,
+      nativeVirtualKeyCode: 65,
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Backspace",
+      code: "Backspace",
+      windowsVirtualKeyCode: 8,
+      nativeVirtualKeyCode: 8,
+    });
+    await send("Input.insertText", { text: String(flags.value) });
+    const page = await evaluate(send, READ_EXPR);
+    return page;
+  });
+  if (result.inputValue !== String(flags.value)) {
+    die(
+      `Fill did not stick. Expected ${JSON.stringify(flags.value)} but input is ${JSON.stringify(result.inputValue)}`
+    );
+  }
+  printJson({
+    filled: { role, name, value: result.inputValue },
+    inputValue: result.inputValue,
+  });
+}
+
+async function cmdBrowserClick(flags) {
+  const state = loadState();
+  if (!flags.role || flags.name === undefined) die("browser click requires --role and --name");
+  const result = await withPage(state, async (send) => {
+    const mark = await markStatusLog(send);
+    const point = await clickNamed(send, flags.role, flags.name);
+    const page = flags["until-answer"]
+      ? await waitAnswer(send)
+      : flags["until-status"]
+        ? await waitStatus(send, mark, flags["until-status"])
+        : await evaluate(send, READ_EXPR);
+    return {
+      clicked: { role: flags.role, name: flags.name, ...point },
+      statusLog: page.statusLog.slice(mark),
+      page,
+    };
+  });
+  printJson(result);
+}
+
+async function cmdBrowserPress(flags) {
+  const state = loadState();
+  if (flags.key !== "Enter") die('browser press only supports --key Enter (it submits the ask form)');
+  const result = await withPage(state, async (send) => {
+    const mark = await markStatusLog(send);
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+      text: "\r",
+    });
+    await send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    const page = flags["until-answer"]
+      ? await waitAnswer(send)
+      : flags["until-status"]
+        ? await waitStatus(send, mark, flags["until-status"])
+        : await evaluate(send, READ_EXPR);
+    return { pressed: "Enter", statusLog: page.statusLog.slice(mark), page };
+  });
+  printJson(result);
+}
+
+function writeArtifact(file, contents) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, contents);
+}
+
+async function cmdBrowserSnapshot(flags) {
+  const state = loadState();
+  if (!flags.path) die("browser snapshot requires --path");
+  const meta = requireFeature(flags);
+  const lines = await withPage(state, async (send) => {
+    const tree = await send("Accessibility.getFullAXTree");
+    return (tree.nodes || [])
+      .filter((node) => !node.ignored && axValue(node.name))
+      .filter((node) => !["InlineTextBox", "none"].includes(axValue(node.role)))
+      .map((node) => `${axValue(node.role)}\t${axValue(node.name)}`);
+  });
+  const body = [
+    `feature: ${meta.feature}`,
+    `entry: ${meta.entry}`,
+    `url: ${state.baseUrl}/`,
+    "role\tname",
+    ...lines,
+    "",
+  ].join("\n");
+  writeArtifact(flags.path, body);
+  printJson({ wrote: flags.path, lines: lines.length, ...meta });
+}
+
+async function cmdBrowserScreenshot(flags) {
+  const state = loadState();
+  if (!flags.path) die("browser screenshot requires --path");
+  const meta = requireFeature(flags);
+  const image = await withPage(state, async (send) => {
+    const shot = await send("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: true,
+    });
+    return Buffer.from(shot.data, "base64");
+  });
+  writeArtifact(flags.path, image);
+  const metaPath = `${flags.path}.meta.json`;
+  writeArtifact(
+    metaPath,
+    JSON.stringify(
+      { ...meta, url: `${state.baseUrl}/`, bytes: image.length, screenshot: flags.path },
+      null,
+      2
+    )
+  );
+  printJson({ wrote: flags.path, meta: metaPath, bytes: image.length });
+}
+
+function cmdBrowserClose() {
+  const state = loadState();
+  const result = killRecorded(state.chromePid);
+  state.chromePid = null;
+  saveState(state);
+  printJson({ chrome: result });
+}
+
+function cmdCleanup() {
+  const id = runId();
+  const file = statePath(id);
+  const kept = evidenceDir(id);
+  if (!fs.existsSync(file)) {
+    printJson({
+      cleaned: false,
+      reason: "no state for this run",
+      evidence: fs.existsSync(kept) ? kept : null,
+    });
+    return;
+  }
+  const state = JSON.parse(fs.readFileSync(file, "utf8"));
+  const chrome = killRecorded(state.chromePid);
+  const server = killRecorded(state.pid);
+  fs.rmSync(scratchDir(id), { recursive: true, force: true });
+  printJson({
+    cleaned: true,
+    chrome,
+    server,
+    removed: scratchDir(id),
+    evidence: fs.existsSync(kept) ? kept : null,
+  });
+}
+
+function usage() {
+  process.stdout.write(`verify-friday commands:
+  launch
+  doctor
+  browser open
+  browser read [--path <file> --feature <id> --entry <text>]
+  browser fill --role <role> --name <name> --value <text>
+  browser click --role <role> --name <name> [--until-status <text>] [--until-answer]
+  browser press --key Enter [--until-status <text>] [--until-answer]
+  browser snapshot --aria --path <file> --feature <id> --entry <text>
+  browser screenshot --path <file> --feature <id> --entry <text>
+  browser close
+  cleanup
+Set FRIDAY_VERIFY_RUN and, if needed, FRIDAY_VERIFY_PORT (default 4173).
+`);
+}
+
+async function main() {
+  const [command, sub, ...rest] = process.argv.slice(2);
+  const { flags } = parseArgs(rest);
+  if (!command || command === "help" || flags.help) {
+    usage();
+    return;
+  }
+  if (command === "launch") return cmdLaunch();
+  if (command === "doctor") return cmdDoctor();
+  if (command === "cleanup") return cmdCleanup();
+  if (command === "browser") {
+    if (sub === "open") return cmdBrowserOpen();
+    if (sub === "read") return cmdBrowserRead(flags);
+    if (sub === "fill") return cmdBrowserFill(flags);
+    if (sub === "click") return cmdBrowserClick(flags);
+    if (sub === "press") return cmdBrowserPress(flags);
+    if (sub === "snapshot") {
+      if (!flags.aria) die("browser snapshot requires --aria");
+      return cmdBrowserSnapshot(flags);
+    }
+    if (sub === "screenshot") return cmdBrowserScreenshot(flags);
+    if (sub === "close") return cmdBrowserClose();
+  }
+  usage();
+  die(`Unknown command ${[command, sub].filter(Boolean).join(" ")}`);
+}
+
+main().catch((err) => die(err.stack || err.message));
